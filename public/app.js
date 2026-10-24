@@ -61,7 +61,9 @@ const familyAvg = (item) => {
 };
 
 // Carte d'affiche. Options : date complète, logos des plateformes, raison de la recommandation, rôle.
-function movieCard(m, { showLogos = false, fullDate = false, why = m._why, sub = '' } = {}) {
+const PLAY = '<span class="play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></span>';
+
+function movieCard(m, { showLogos = false, fullDate = false, why = m._why, sub = '', wide = false } = {}) {
   const saved = inList(m.id);
   const badges = [];
   if (saved?.status === 'seen') badges.push('<span class="badge seen">Vu</span>');
@@ -70,9 +72,12 @@ function movieCard(m, { showLogos = false, fullDate = false, why = m._why, sub =
   else if (isFuture(m.release_date)) badges.push(`<span class="badge">${esc(fmtDate(m.release_date, { day: 'numeric', month: 'short' }))}</span>`);
   const date = fullDate && m.release_date ? shortDate(m.release_date) : year(m.release_date);
   return `
-    <button class="card" data-movie="${m.id}">
-      ${posterImg(m.poster_path, m.title)}
-      <div class="badges">${badges.join('')}</div>
+    <button class="card ${wide ? 'wide' : ''}" data-movie="${m.id}">
+      <div class="media">
+        ${wide && m.backdrop_path ? posterImg(m.backdrop_path, m.title, 'w780') : posterImg(m.poster_path, m.title)}
+        <div class="badges">${badges.join('')}</div>
+        ${PLAY}
+      </div>
       <div class="t">${esc(m.title)}</div>
       <div class="s">${esc(date)}${m.vote_average ? ` · ★ ${fr1(m.vote_average)}` : ''}</div>
       ${sub ? `<div class="s">${esc(sub)}</div>` : ''}
@@ -108,7 +113,18 @@ function fillSc(root) {
 }
 
 const grid = (movies, opts) => (movies.length ? `<div class="grid">${movies.map((m) => movieCard(m, opts)).join('')}</div>` : '<div class="empty"><b>Aucun film trouvé</b></div>');
-const row = (movies, opts) => `<div class="hscroll">${movies.map((m) => movieCard(m, opts)).join('')}</div>`;
+const row = (movies, opts = {}) => `<div class="hscroll">${movies.map((m) => movieCard(m, { wide: true, ...opts })).join('')}</div>`;
+
+// Section avec titre, sous-titre et « Voir tout » qui ouvre la liste complète en grille.
+const collections = new Map();
+function section(title, movies, { sub = '', opts = {}, all = movies } = {}) {
+  const key = `c${collections.size + 1}`;
+  collections.set(key, { title, movies: all, opts });
+  return `<h2 class="section-title"><span>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>${
+    all.length > 2 ? `<button class="see-all" data-seeall="${key}">Voir tout</button>` : ''
+  }</h2>${row(movies, opts)}`;
+}
+const heading = (title, sub = '') => `<h2 class="section-title"><span>${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ''}</span></h2>`;
 
 // Thèmes proposés dans Explorer : genres TMDB ou mots-clés (résolus à la volée).
 const THEMES = [
@@ -129,8 +145,17 @@ const THEMES = [
   { key: 'braquage', label: 'Casses et braquages', em: '💰', tint: '#5d6b2e', keyword: 'heist' },
   { key: 'noel', label: 'Films de Noël', em: '🎄', tint: '#2f7a46', keyword: 'christmas' },
   { key: 'sport', label: 'Sport', em: '⚽', tint: '#2d7f5f', keyword: 'sport' },
-  { key: 'classiques', label: 'Grands classiques', em: '🏆', tint: '#8f7330', params: { sort_by: 'vote_average.desc', 'vote_count.gte': 5000 } },
+  { key: 'classiques', label: 'Grands classiques', em: '🏆', tint: '#c98a1b', classic: true, params: { sort_by: 'vote_average.desc', 'vote_count.gte': 5000 } },
 ];
+
+const TILE_COLORS = ['#d94f72', '#111216', '#3a5bd9', '#e9822e', '#1f9d68', '#7a4fd1'];
+
+// Couleurs des bulles de genres (centre, halo).
+const ORBS = {
+  famille: ['#3fcf8e', '#b5f0a0'], animation: ['#6b5bff', '#9fd0ff'], comedie: ['#ffb000', '#ffd98a'], romance: ['#ff3d7f', '#ffb0c8'],
+  aventure: ['#00b3a4', '#9ff0e0'], sf: ['#3b4cff', '#c46bff'], frissons: ['#8a1538', '#ff5a5a'], enquetes: ['#3d4766', '#9aa8d6'],
+  drames: ['#8f3fd1', '#ffa0e0'], francais: ['#2f5bff', '#ff4d5e'], classiques: ['#b8860b', '#ffe08a'],
+};
 
 async function themeParams(theme) {
   if (theme.params) return theme.params;
@@ -142,8 +167,8 @@ async function themeParams(theme) {
 
 // ---------- Vues ----------
 
-const TITLES = { liste: 'Notre liste', pourvous: 'Pour vous', cine: 'Au cinéma', streaming: 'Streaming', recherche: 'Explorer', reglages: 'Réglages' };
-let currentTab = 'liste';
+const TITLES = { liste: 'Notre liste', pourvous: 'Accueil', cine: 'Au cinéma', streaming: 'Streaming', recherche: 'Explorer', reglages: 'Réglages' };
+let currentTab = 'pourvous';
 const vs = { listeFilter: 'todo', listeOnly: 'all', listeGroup: false, cineMode: 'now', cineDay: today(), streamProvider: 'mine', streamSort: 'popular', streamGenre: '', streamPage: 1, query: '' };
 
 function setTools(html, onClick) {
@@ -155,7 +180,11 @@ function setTools(html, onClick) {
 let renderToken = 0;
 async function render() {
   const token = ++renderToken;
-  $('#view-title').textContent = TITLES[currentTab];
+  const hour = new Date().getHours();
+  $('#view-title').innerHTML =
+    currentTab === 'pourvous' && settings.name
+      ? `<span class="greet">${avatar(settings.name)}<span><small>${hour < 18 && hour > 4 ? 'Bonjour' : 'Bonsoir'}</small><b>Salut, ${esc(settings.name)}</b></span></span>`
+      : esc(TITLES[currentTab]);
   document.querySelectorAll('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.tab === currentTab));
   const view = $('#view');
   if (!settings.name && currentTab !== 'reglages') return renderWelcome(view);
@@ -245,6 +274,7 @@ async function renderListe(view, alive) {
           <div class="logos" data-logos="${i.id}"></div>
           ${i.note ? `<div class="meta" style="margin-top:4px">📝 ${esc(i.note)}</div>` : ''}
         </div>
+        <svg class="kebab" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
       </button>`;
   };
 
@@ -257,7 +287,7 @@ async function renderListe(view, alive) {
     }
     view.innerHTML = [...groups.entries()]
       .sort((a, b) => b[1].length - a[1].length)
-      .map(([g, its]) => `<h2 class="section-title">${esc(g)} <small>${its.length} film${its.length > 1 ? 's' : ''}</small></h2><div class="rows">${its.map(rowHtml).join('')}</div>`)
+      .map(([g, its]) => `<h2 class="section-title"><span>${esc(g)}<small>${its.length} film${its.length > 1 ? 's' : ''}</small></span></h2><div class="rows">${its.map(rowHtml).join('')}</div>`)
       .join('');
   } else {
     view.innerHTML = `<div class="rows">${items.map(rowHtml).join('')}</div>`;
@@ -277,7 +307,7 @@ async function renderPourVous(view, alive) {
     const trend = (await tmdb('trending/movie/week')).results;
     if (!alive()) return;
     view.innerHTML = `<div class="box"><b>Les recommandations arrivent dès que la liste se remplit.</b><div class="hint">Ajoute des films, marque ceux que vous avez vus et notez-les : plus vous en mettez, plus les suggestions seront justes.</div></div>
-      <h2 class="section-title">Tendances de la semaine</h2>${grid(trend)}`;
+      ${section('Tendances de la semaine', trend.slice(0, 10), { all: trend })}`;
     return;
   }
 
@@ -291,39 +321,42 @@ async function renderPourVous(view, alive) {
     { id: 'because', title: '', sub: '' },
     { id: 'themes', title: 'Vos thèmes', sub: 'Ce qui revient le plus dans vos films' },
   ];
-  view.innerHTML = sections.map((s) => `<section data-sec="${s.id}">${s.title ? `<h2 class="section-title">${esc(s.title)} <small>${esc(s.sub)}</small></h2>` : ''}${s.id === 'because' ? '' : spinner()}</section>`).join('');
+  const byId = Object.fromEntries(sections.map((s) => [s.id, s]));
+  view.innerHTML = sections.map((s) => `<section data-sec="${s.id}">${s.title ? heading(s.title, s.sub) + spinner() : ''}</section>`).join('');
   const fill = (id, html) => {
     const el = view.querySelector(`[data-sec="${id}"]`);
     if (!el || !alive()) return;
-    el.innerHTML = el.querySelector('h2') ? el.querySelector('h2').outerHTML + html : html;
+    el.innerHTML = html;
     fillLogos(el);
   };
-  const safe = (id, fn) => fn().catch((e) => fill(id, errorBox(e)));
+  const safe = (id, fn) => fn().catch((e) => fill(id, heading(byId[id].title) + errorBox(e)));
+  const fillRow = (id, movies, opts, empty) =>
+    fill(id, movies.length ? section(byId[id].title, movies.slice(0, 10), { sub: byId[id].sub, opts, all: movies }) : heading(byId[id].title) + `<p class="hint">${empty}</p>`);
 
   safe('reco', async () => {
     const recos = await recommendationsFrom(profile, 20);
-    fill('reco', recos.length ? row(recos) : '<p class="hint">Ajoute et note quelques films pour affiner.</p>');
+    fillRow('reco', recos, {}, 'Ajoute et note quelques films pour affiner.');
   });
 
   safe('stream', async () => {
-    if (!settings.providers.length) return fill('stream', '<button class="btn ghost block" data-tab="reglages">Choisir nos plateformes</button>');
+    if (!settings.providers.length) return fill('stream', heading(byId.stream.title, byId.stream.sub) + '<button class="btn ghost block" data-tab="reglages">Choisir nos plateformes</button>');
     const topGenres = topEntries(profile.genres, 3).map((g) => g.id).join('|');
     const base = { watch_region: 'FR', with_watch_providers: settings.providers.join('|'), with_watch_monetization_types: 'flatrate|free|ads', sort_by: 'popularity.desc', 'vote_count.gte': 50 };
     const [byTaste, popular] = await Promise.all([pages('discover/movie', { ...base, ...(topGenres ? { with_genres: topGenres } : {}) }, 3), pages('discover/movie', base, 2)]);
     const picks = await deepRank([...byTaste, ...popular], profile, { limit: 16, deep: 20 });
-    fill('stream', row(picks, { showLogos: true }));
+    fillRow('stream', picks, { showLogos: true }, 'Rien trouvé sur vos plateformes.');
   });
 
   safe('soon', async () => {
     const upcoming = (await pages('movie/upcoming', {}, 4)).filter((m) => isFuture(m.release_date));
     const picks = await deepRank(upcoming, profile, { limit: 14, deep: 22 });
-    fill('soon', picks.length ? row(picks, { fullDate: true }) : '<p class="hint">Pas de sortie annoncée pour l’instant.</p>');
+    fillRow('soon', picks, { fullDate: true }, 'Pas de sortie annoncée pour l’instant.');
   });
 
   safe('now', async () => {
     const now = await pages('movie/now_playing', {}, 3);
     const picks = await deepRank(now, profile, { limit: 12, deep: 18 });
-    fill('now', row(picks));
+    fillRow('now', picks, {}, 'Rien à l’affiche pour l’instant.');
   });
 
   safe('because', async () => {
@@ -332,7 +365,7 @@ async function renderPourVous(view, alive) {
       liked.map(async (l) => {
         const d = await movieDetails(l.id);
         const recs = (d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id)).slice(0, 12);
-        return recs.length ? `<h2 class="section-title">Parce que vous avez aimé ${esc(l.title)}</h2>${row(recs, { why: '' })}` : '';
+        return recs.length ? section(`Parce que vous avez aimé ${l.title}`, recs.slice(0, 8), { opts: { why: '' }, all: recs }) : '';
       }),
     );
     fill('because', blocks.join(''));
@@ -345,7 +378,7 @@ async function renderPourVous(view, alive) {
       ...g.map((x) => `<button class="chip" data-theme-genre="${x.id}" data-label="${esc(x.name)}">${esc(x.name)}</button>`),
       ...k.map((x) => `<button class="chip" data-theme-kw="${x.id}" data-label="${esc(x.name)}">#${esc(x.name)}</button>`),
     ];
-    fill('themes', chips.length ? `<div class="btn-row">${chips.join('')}</div>` : '<p class="hint">Pas encore assez de films.</p>');
+    fill('themes', heading(byId.themes.title, byId.themes.sub) + (chips.length ? `<div class="btn-row">${chips.join('')}</div>` : '<p class="hint">Pas encore assez de films.</p>'));
   });
 }
 
@@ -386,7 +419,7 @@ async function renderCine(view, alive) {
     for (const m of movies) (byMonth[fmtDate(m.release_date, { month: 'long', year: 'numeric' })] ||= []).push(m);
     view.innerHTML =
       Object.entries(byMonth)
-        .map(([month, ms]) => `<h2 class="section-title">${esc(month[0].toUpperCase() + month.slice(1))} <small>${ms.length} sorties</small></h2>${grid(ms, { fullDate: true })}`)
+        .map(([month, ms]) => `<h2 class="section-title"><span>${esc(month[0].toUpperCase() + month.slice(1))}<small>${ms.length} sorties</small></span></h2>${grid(ms, { fullDate: true })}`)
         .join('') || '<div class="empty"><b>Aucune sortie annoncée</b></div>';
   }
 }
@@ -542,11 +575,20 @@ async function renderExplorer(view, alive) {
 
   const drawHome = async () => {
     home.innerHTML = `
-      <h2 class="section-title">Explorer par thème</h2>
-      <div class="theme-grid">${THEMES.map((t) => `<button class="theme" style="--tint:${t.tint}" data-theme="${t.key}"><span class="em">${t.em}</span>${esc(t.label)}</button>`).join('')}</div>
-      <h2 class="section-title">Tendances de la semaine</h2><div id="trend">${spinner()}</div>`;
+      ${heading('Genres')}
+      <div class="bubbles">${THEMES.filter((t) => t.params?.with_genres || t.params?.with_origin_country)
+        .map((t) => {
+          const [c1, c2] = ORBS[t.key] || ['#ff7a9c', '#ffc27a'];
+          return `<button class="bubble" data-theme="${t.key}"><span class="orb" style="--c1:${c1};--c2:${c2}"><b>${esc(t.em)}</b></span>${esc(t.label)}</button>`;
+        })
+        .join('')}</div>
+      ${heading('Thèmes')}
+      <div class="tiles">${THEMES.filter((t) => !(t.params?.with_genres || t.params?.with_origin_country))
+        .map((t, k) => `<button class="tile" style="--tint:${TILE_COLORS[k % TILE_COLORS.length]}" data-theme="${t.key}"><span class="em">${t.em}</span><span><b>${esc(t.label)}</b><small>Voir les films</small></span></button>`)
+        .join('')}</div>
+      <div id="trend">${heading('Tendances de la semaine') + spinner()}</div>`;
     const trend = await tmdb('trending/movie/week').catch(() => ({ results: [] }));
-    if (alive() && $('#trend')) $('#trend').innerHTML = row(trend.results);
+    if (alive() && $('#trend')) $('#trend').innerHTML = section('Tendances de la semaine', trend.results.slice(0, 10), { all: trend.results });
   };
 
   let timer;
@@ -622,7 +664,7 @@ async function renderReglages(view) {
     $('#theaters').innerHTML = settings.theaters.length
       ? settings.theaters
           .map(
-            (t) => `<div class="row" style="grid-template-columns:1fr auto;align-items:center">
+            (t) => `<div class="row plain">
               <div><h3>${esc(t.name || t.id)}</h3><div class="meta">${esc(t.id)}</div></div>
               <button class="btn danger small" data-del-theater="${esc(t.id)}">Retirer</button></div>`,
           )
@@ -710,7 +752,7 @@ function showTop() {
   content.innerHTML = spinner();
   setSheetBg(null);
   const ok = () => stack[stack.length - 1] === entry;
-  const run = { movie: showMovie, person: showPerson, theme: showTheme }[entry.type];
+  const run = { movie: showMovie, person: showPerson, theme: showTheme, grid: showGrid }[entry.type];
   if (entry.type === 'movie') history.replaceState(null, '', `#film-${entry.id}`);
   run(entry, content, ok).catch((e) => {
     if (ok()) content.innerHTML = `<div style="padding:70px 16px">${errorBox(e)}</div>`;
@@ -790,7 +832,13 @@ function movieHtml(m) {
        <button class="btn ghost" data-act="hide">Pas pour nous</button>`;
 
   return `
-    ${m.backdrop_path ? `<div class="hero"><img src="${IMG}w780${m.backdrop_path}" alt=""></div>` : ''}
+    ${
+      m.backdrop_path
+        ? `<div class="hero"><img src="${IMG}w780${m.backdrop_path}" alt="">${
+            trailer ? `<a class="play" href="https://www.youtube.com/watch?v=${esc(trailer.key)}" target="_blank" rel="noopener" aria-label="Bande-annonce"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></a>` : ''
+          }</div>`
+        : ''
+    }
     <div class="detail-head ${m.backdrop_path ? '' : 'noimg'}">
       ${posterImg(m.poster_path, m.title)}
       <div>
@@ -874,7 +922,7 @@ function movieHtml(m) {
         <div style="margin-top:6px">${m.imdb_id ? `<a href="https://www.imdb.com/title/${esc(m.imdb_id)}/" target="_blank" rel="noopener">IMDb ↗</a> · ` : ''}<a href="https://www.themoviedb.org/movie/${m.id}" target="_blank" rel="noopener">TMDB ↗</a> · <a id="sc-link" href="#" target="_blank" rel="noopener">SensCritique ↗</a></div>
       </div>
 
-      ${m.recommendations?.results?.length ? `<h2 class="section-title">Dans le même esprit</h2>${row(m.recommendations.results.slice(0, 14), { why: '' })}` : ''}
+      ${m.recommendations?.results?.length ? section('Dans le même esprit', m.recommendations.results.slice(0, 10), { opts: { why: '' }, all: m.recommendations.results }) : ''}
     </div>`;
 }
 
@@ -1014,14 +1062,14 @@ async function showPerson(entry, content, ok) {
       inOurList.length ? `<h2 class="section-title">Dans notre liste</h2>${row(inOurList)}` : '',
       ...(isDirector
         ? [
-            directed.length ? `<h2 class="section-title">Réalisation <small>${directed.length} films</small></h2>${grid(sort(directed))}` : '',
-            acted.length ? `<h2 class="section-title">Comme acteur·rice <small>${acted.length} films</small></h2>${grid(sort(acted).slice(0, 30), { sub: '' })}` : '',
+            directed.length ? `<h2 class="section-title"><span>Réalisation<small>${directed.length} films</small></span></h2>${grid(sort(directed))}` : '',
+            acted.length ? `<h2 class="section-title"><span>Comme acteur·rice<small>${acted.length} films</small></span></h2>${grid(sort(acted).slice(0, 30), { sub: '' })}` : '',
           ]
         : [
-            acted.length ? `<h2 class="section-title">Filmographie <small>${acted.length} films</small></h2>${grid(sort(acted).slice(0, 60).map((m) => ({ ...m, _why: m.character ? `Rôle : ${m.character}` : '' })))}` : '',
-            directed.length ? `<h2 class="section-title">Réalisation <small>${directed.length} films</small></h2>${grid(sort(directed))}` : '',
+            acted.length ? `<h2 class="section-title"><span>Filmographie<small>${acted.length} films</small></span></h2>${grid(sort(acted).slice(0, 60).map((m) => ({ ...m, _why: m.character ? `Rôle : ${m.character}` : '' })))}` : '',
+            directed.length ? `<h2 class="section-title"><span>Réalisation<small>${directed.length} films</small></span></h2>${grid(sort(directed))}` : '',
           ]),
-      written.length ? `<h2 class="section-title">Scénario <small>${written.length} films</small></h2>${grid(sort(written).slice(0, 18))}` : '',
+      written.length ? `<h2 class="section-title"><span>Scénario<small>${written.length} films</small></span></h2>${grid(sort(written).slice(0, 18))}` : '',
     ];
     content.innerHTML = `
       <div class="person-head">
@@ -1051,6 +1099,13 @@ async function showPerson(entry, content, ok) {
   draw();
 }
 
+// --- Liste complète d'une section (« Voir tout ») ---
+
+async function showGrid(entry, content) {
+  content.innerHTML = `<h2 class="sheet-title">${esc(entry.title)}</h2><div class="detail-body" style="padding-top:18px">${grid(entry.movies, { ...entry.opts, wide: false })}</div>`;
+  fillLogos(content);
+}
+
 // --- Thème (genre ou mot-clé) ---
 
 async function showTheme(entry, content, ok) {
@@ -1066,8 +1121,8 @@ async function showTheme(entry, content, ok) {
     if (onlyMine && settings.providers.length) Object.assign(params, { watch_region: 'FR', with_watch_providers: settings.providers.join('|'), with_watch_monetization_types: 'flatrate|free|ads' });
     if (page === 1) {
       content.innerHTML = `
-        <div class="detail-body" style="padding-top:60px">
-          <h2 style="font-size:28px;margin:0 0 14px;letter-spacing:-.03em">${esc(entry.label)}</h2>
+        <div class="detail-body" style="padding-top:28px">
+          <h2 class="sheet-title" style="padding-top:0;margin-bottom:16px">${esc(entry.label)}</h2>
           <div class="days">
             ${[['popularity.desc', 'Populaires'], ['vote_average.desc', 'Mieux notés'], ['primary_release_date.desc', 'Récents']]
               .map(([k, l]) => `<button class="chip sm ${sort === k ? 'on' : ''}" data-ts="${k}">${l}</button>`)
@@ -1121,6 +1176,8 @@ document.addEventListener('click', async (e) => {
   if (person) return pushSheet({ type: 'person', id: Number(person.dataset.person) });
   const card = e.target.closest('[data-movie]');
   if (card) return pushSheet({ type: 'movie', id: Number(card.dataset.movie) });
+  const all = e.target.closest('[data-seeall]');
+  if (all && collections.has(all.dataset.seeall)) return pushSheet({ type: 'grid', ...collections.get(all.dataset.seeall) });
   const theme = e.target.closest('[data-theme]');
   if (theme) {
     const t = THEMES.find((x) => x.key === theme.dataset.theme);
