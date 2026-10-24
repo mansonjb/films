@@ -39,3 +39,16 @@ test('« pas intéressé » ajoute le film masqué, sans envie, avec ses genres'
   assert.deepEqual(l.items[0].wants, []);
   assert.deepEqual(l.items[0].genre_ids, [28]);
 });
+
+test('noter un film absent de la liste l’ajoute comme vu avec la note', () => {
+  const out = applyAction({ items: [] }, { action: 'rate', movie: { id: 7, title: 'X' }, value: 4, by: 'JB' });
+  assert.equal(out.items[0].status, 'seen');
+  assert.deepEqual(out.items[0].ratings, { JB: 4 });
+});
+
+test('noter un film « à voir » le passe en vu', () => {
+  const list = applyAction({ items: [] }, { action: 'add', movie: { id: 7, title: 'X' }, by: 'JB' });
+  const out = applyAction(list, { action: 'rate', movieId: 7, value: 5, by: 'Léa' });
+  assert.equal(out.items[0].status, 'seen');
+  assert.equal(out.items[0].ratings['Léa'], 5);
+});

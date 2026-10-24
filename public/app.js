@@ -3,7 +3,7 @@
 
 import {
   IMG, settings, saveSettings, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
-  keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique,
+  keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique, awards,
 } from './js/data.js';
 import { buildProfile, topEntries, deepRank, recommendationsFrom } from './js/reco.js';
 
@@ -67,7 +67,7 @@ function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false 
       ${posterBox(m.poster_path, m.title)}
       <div class="t">${esc(m.title)}</div>
       <div class="s">${esc(date)}${m.vote_average ? ` · <svg class="star"><use href="#i-star"/></svg>${fr1(m.vote_average)}` : ''}${sub ? ` · ${esc(sub)}` : ''}</div>
-      ${why ? `<div class="why">${esc(why)}</div>` : ''}
+      ${m._award ? `<div class="award">${icon('award')}${esc(m._award)}</div>` : why ? `<div class="why">${esc(why)}</div>` : ''}
       ${logos ? `<div class="logos" data-logos="${m.id}"></div>` : ''}
     </button>
     <div class="badges">${badges.join('')}</div>
@@ -218,12 +218,13 @@ applyTheme();
 
 // ---------- Navigation et rendu ----------
 
-const TITLES = { accueil: 'Accueil', liste: 'Notre liste', cine: 'Au cinéma', streaming: 'Streaming', explorer: 'Explorer', reglages: 'Réglages' };
+const TITLES = { accueil: 'Accueil', liste: 'Notre liste', cine: 'Au cinéma', streaming: 'Streaming', prix: 'Récompenses', explorer: 'Explorer', reglages: 'Réglages' };
 let currentTab = 'accueil';
 const vs = {
   listeStatus: 'todo', listeFilter: 'all', listeSort: 'wants', listeView: 'rows', listeGroup: false,
   cineMode: 'now', cineDay: today(),
   streamProvider: 'mine', streamSort: 'popular', streamGenre: '',
+  prixFest: 'cannes', prixYear: 0, cineFr: false,
 };
 
 function setTools(html, onClick) {
@@ -314,7 +315,7 @@ async function render(animate = true) {
   }
   if (!settings.name && currentTab !== 'reglages') return renderWelcome(view);
   try {
-    await { accueil: renderAccueil, liste: renderListe, cine: renderCine, streaming: renderStreaming, explorer: renderExplorer, reglages: renderReglages }[currentTab](view, alive);
+    await { accueil: renderAccueil, liste: renderListe, cine: renderCine, streaming: renderStreaming, prix: renderPrix, explorer: renderExplorer, reglages: renderReglages }[currentTab](view, alive);
   } catch (e) {
     if (alive()) view.innerHTML = errorBox(e);
   }
@@ -388,6 +389,7 @@ async function renderAccueil(view, alive) {
   blocks.push({ id: 'stream', title: 'Sur vos plateformes', sub: settings.providers.length ? 'Choisis pour vous' : '' });
   blocks.push({ id: 'soon', title: 'Bientôt au cinéma', sub: profile ? 'Les sorties qui vous ressemblent' : 'Les prochaines sorties' });
   blocks.push({ id: 'now', title: 'À l’affiche', sub: profile ? 'Classés selon vos goûts' : '' });
+  blocks.push({ id: 'fr', title: 'Cinéma français', sub: 'Les films français du moment, en salles et en streaming' });
   (profile?.liked || []).slice(0, 2).forEach((l, k) => blocks.push({ id: `because${k}`, title: `Parce que vous avez aimé ${l.title}`, seed: l }));
   rows.innerHTML = blocks.map((b) => `<div data-sec="${b.id}">${sectionHtml(b.title, skRail(), { sub: b.sub })}</div>`).join('');
 
@@ -427,6 +429,12 @@ async function renderAccueil(view, alive) {
   safe('now', async () => {
     const now = remember(await pages('movie/now_playing', {}, 3));
     fillRail('now', profile ? remember(await deepRank(now, profile, { limit: 24, deep: 14 })) : now);
+  });
+  safe('fr', async () => {
+    const recent = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+    const base = { with_origin_country: 'FR', with_original_language: 'fr', sort_by: 'popularity.desc', 'primary_release_date.gte': recent, 'vote_count.gte': 5 };
+    const fr = remember(await pages('discover/movie', base, 3));
+    fillRail('fr', profile ? remember(await deepRank(fr, profile, { limit: 30, deep: 12 })) : fr, { logos: true });
   });
   for (const b of blocks.filter((x) => x.seed))
     safe(b.id, async () => {
@@ -648,13 +656,14 @@ function nextDays(n = 7) {
 
 async function renderCine(view, alive) {
   setTools(
-    `<div class="seg">${[['now', "À l'affiche"], ['soon', 'Prochainement'], ['prog', 'Séances']].map(([k, l]) => `<button class="${vs.cineMode === k ? 'on' : ''}" data-cm="${k}">${l}</button>`).join('')}</div>`,
+    `<div class="seg">${[['now', "À l'affiche"], ['soon', 'Prochainement'], ['prog', 'Séances']].map(([k, l]) => `<button class="${vs.cineMode === k ? 'on' : ''}" data-cm="${k}">${l}</button>`).join('')}</div>` +
+      (vs.cineMode !== 'prog' ? `<button class="chip ${vs.cineFr ? 'on' : ''}" data-cfr="1">Films français</button>` : ''),
     (e) => {
-      const b = e.target.closest('[data-cm]');
-      if (b) {
-        vs.cineMode = b.dataset.cm;
-        render(false);
-      }
+      const b = e.target.closest('[data-cm], [data-cfr]');
+      if (!b) return;
+      if (b.dataset.cm) vs.cineMode = b.dataset.cm;
+      else vs.cineFr = !vs.cineFr;
+      render(false);
     },
   );
   if (!listLoaded) fetchList().catch(() => {});
@@ -662,11 +671,13 @@ async function renderCine(view, alive) {
   view.innerHTML = skGrid(12);
 
   if (vs.cineMode === 'now') {
-    const now = remember((await loadNowPlaying()).sort((a, b) => b.popularity - a.popularity));
-    if (alive()) view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films à l’affiche en France</p>` + gridHtml(now);
+    let now = remember((await loadNowPlaying()).sort((a, b) => b.popularity - a.popularity));
+    if (vs.cineFr) now = await frenchOnly(now);
+    if (alive()) view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films ${vs.cineFr ? 'français ' : ''}à l’affiche</p>` + gridHtml(now);
     return;
   }
-  const up = remember((await pages('movie/upcoming', {}, 5)).filter((m) => isFuture(m.release_date)).sort((a, b) => a.release_date.localeCompare(b.release_date)));
+  let up = remember((await pages('movie/upcoming', {}, 5)).filter((m) => isFuture(m.release_date)).sort((a, b) => a.release_date.localeCompare(b.release_date)));
+  if (vs.cineFr) up = await frenchOnly(up);
   if (!alive()) return;
   const bucket = (d) => {
     const n = daysUntil(d);
@@ -682,6 +693,13 @@ async function renderCine(view, alive) {
     groups.get(b).push(m);
   }
   view.innerHTML = [...groups.entries()].map(([g, ms]) => sectionHtml(g, gridHtml(ms, { fullDate: true }), { sub: `${ms.length} sortie${ms.length > 1 ? 's' : ''}` })).join('') || '<div class="empty"><b>Aucune sortie annoncée</b></div>';
+}
+
+// Films de production française : langue originale française, pays vérifié sur la fiche.
+async function frenchOnly(arr) {
+  const cands = arr.filter((m) => !m.original_language || m.original_language === 'fr');
+  const det = await Promise.all(cands.map((m) => movieDetails(m.id).catch(() => null)));
+  return cands.filter((m, k) => !det[k] || (det[k].origin_country || det[k].production_countries?.map((c) => c.iso_3166_1) || []).includes('FR'));
 }
 
 async function renderProgramme(view, alive) {
@@ -824,6 +842,69 @@ async function renderStreaming(view, alive) {
     { rootMargin: '800px' },
   );
   io.observe($('#sentinel'));
+}
+
+// ---------- Récompenses ----------
+
+const FESTS = [
+  ['cannes', 'Cannes', 5], ['venise', 'Venise', 9], ['berlin', 'Berlinale', 2], ['oscars', 'Oscars', 3], ['cesar', 'César', 2], ['bafta', 'BAFTA', 2],
+];
+const lastEdition = (month) => {
+  const d = new Date();
+  return d.getMonth() + 1 >= month ? d.getFullYear() : d.getFullYear() - 1;
+};
+
+async function renderPrix(view, alive) {
+  const fest = FESTS.find((f) => f[0] === vs.prixFest) || FESTS[0];
+  const latest = lastEdition(fest[2]);
+  if (!vs.prixYear || vs.prixYear > latest) vs.prixYear = latest;
+  const years = Array.from({ length: latest - 1999 }, (_, k) => latest - k);
+  setTools(
+    FESTS.map(([k, l]) => `<button class="chip ${vs.prixFest === k ? 'on' : ''}" data-pf="${k}">${l}</button>`).join('') +
+      '<span class="sep"></span>' +
+      `<select class="chip" id="pyear" aria-label="Année">${years.map((y) => `<option ${y === vs.prixYear ? 'selected' : ''}>${y}</option>`).join('')}</select>`,
+    (e) => {
+      const b = e.target.closest('[data-pf]');
+      if (!b) return;
+      vs.prixFest = b.dataset.pf;
+      vs.prixYear = 0;
+      render(false);
+    },
+  );
+  $('#pyear').onchange = (e) => {
+    vs.prixYear = Number(e.target.value);
+    render(false);
+  };
+  if (!listLoaded) fetchList().catch(() => {});
+  view.innerHTML = `<div class="sk" style="height:180px;margin-top:18px"></div>${sectionHtml('Palmarès', skRail())}${sectionHtml('Sélection', skGrid(9))}`;
+  const d = await awards(fest[0], vs.prixYear);
+  if (!alive()) return;
+  remember([...d.winners, ...d.selection]);
+  const top = d.winners[0];
+  const others = d.winners.slice(1);
+  const inSel = new Set(d.winners.map((w) => w.id));
+  const rest = d.selection.filter((m) => !inSel.has(m.id)).sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  const nav = `<div class="subtools" style="margin:16px calc(-1 * var(--gutter)) 0">${[vs.prixYear + 1, vs.prixYear - 1]
+    .filter((y) => y <= latest && y >= 2000)
+    .map((y) => `<button class="chip" data-py="${y}">${y > vs.prixYear ? `${y} →` : `← ${y}`}</button>`)
+    .join('')}</div>`;
+  if (!top && !d.selection.length) {
+    view.innerHTML = `<div class="fest-head"><div><h2>${esc(d.festival)} ${d.year}</h2></div></div><div class="empty"><b>Pas encore de données</b>Le palmarès ${d.year} n’est pas (encore) renseigné dans Wikidata. Essayez une autre année.</div>${nav}`;
+  } else {
+    view.innerHTML = `
+      <div class="fest-head"><div><h2>${esc(d.festival)} ${d.year}</h2><p>${d.winners.length} prix · ${d.selection.length} films en sélection</p></div></div>
+      ${
+        top
+          ? `<button class="winner-top" data-movie="${top.id}">${posterBox(top.poster_path, top.title)}<div><div class="k">${icon('award')}${esc(top._award)}</div><h3>${esc(top.title)}</h3><p>${esc(top.overview || '')}</p><div class="logos" data-logos="${top.id}" style="margin-top:10px"></div></div></button>`
+          : ''
+      }
+      ${others.length ? sectionHtml('Palmarès', railHtml(others, { logos: true })) : ''}
+      ${rest.length ? sectionHtml(d.selectionLabel, gridHtml(rest, { logos: true }), { sub: `${rest.length} autres films` }) : ''}
+      ${nav}
+      <p class="hint" style="margin-top:24px">Données : Wikidata (palmarès et compétition) et TMDB.</p>`;
+  }
+  $$('[data-py]', view).forEach((b) => (b.onclick = () => ((vs.prixYear = Number(b.dataset.py)), render(false))));
+  hydrate(view);
 }
 
 // ---------- Explorer ----------
@@ -1146,10 +1227,12 @@ function movieHtml(m) {
       <button data-act="share">${icon('chev')}Partager</button>
     </div>
 
+    ${rateCard(m, saved)}
+
     <div class="scores">
       <a class="score sc" id="sc-score" href="#" target="_blank" rel="noopener"><span class="lbl">SensCritique</span><b>…</b><span class="sub">&nbsp;</span></a>
       <div class="score"><span class="lbl">TMDB</span><b>${m.vote_average ? fr1(m.vote_average) : '–'}<small>/10</small></b><span class="sub">${(m.vote_count || 0).toLocaleString('fr-FR')} votes</span></div>
-      <div class="score us"><span class="lbl">Nous</span><b>${avg ? fr1(avg) : '–'}<small>/5</small></b><span class="sub">${Object.keys(saved?.ratings || {}).length} note(s)</span></div>
+      <div class="score us"><span class="lbl">Nous</span><b>${avg ? fr1(avg) : '–'}<small>/5</small></b><span class="sub">${(() => { const n = Object.keys(saved?.ratings || {}).length; return n ? `${n} note${n > 1 ? 's' : ''} de la famille` : 'Pas encore noté'; })()}</span></div>
     </div>
 
     ${m.tagline ? `<p class="hint" style="font-style:italic;margin:16px 0 0">${esc(m.tagline)}</p>` : ''}
@@ -1192,16 +1275,6 @@ function movieHtml(m) {
       ? `<div class="block"><h3>En famille</h3>
           <div class="hint" style="margin-bottom:8px">Qui veut le voir ?</div>
           <div class="people">${names.map((n) => `<button class="person-chip ${(saved.wants || []).includes(n) ? 'on' : ''}" data-want="${esc(n)}">${avatar(n)}${esc(n)}</button>`).join('')}</div>
-          ${
-            saved.status === 'seen'
-              ? `<div class="hint" style="margin:14px 0 6px">Ta note</div><div class="stars">${[1, 2, 3, 4, 5]
-                  .map((v) => `<button class="${v <= (saved.ratings?.[settings.name] || 0) ? 'on' : ''}" data-rate="${v}" aria-label="${v} étoiles">${icon('star')}</button>`)
-                  .join('')}</div>${Object.entries(saved.ratings || {})
-                  .filter(([n]) => n !== settings.name)
-                  .map(([n, v]) => `<div class="hint">${esc(n)} : ${'★'.repeat(v)}</div>`)
-                  .join('')}`
-              : ''
-          }
           <textarea class="note" id="note" placeholder="Une note pour la famille (VO, avec les filles…)">${esc(saved.note || '')}</textarea>
         </div>`
       : '';
@@ -1237,6 +1310,19 @@ function movieHtml(m) {
     <div class="d-body"><div class="d-layout"><div>${main}</div><aside>${side}</aside></div>
       ${recs.length ? sectionHtml('Dans le même esprit', railHtml(recs.slice(0, 14), { why: '' }), { all: recs }) : ''}
     </div>`;
+}
+
+// Carte « Ta note » : bien visible, utilisable même si le film n'est pas encore dans la liste.
+const RATE_LABELS = ['', 'Pas aimé', 'Bof', 'Pas mal', 'Très bien', 'Coup de cœur'];
+function rateCard(m, saved) {
+  const mine = saved?.ratings?.[settings.name] || 0;
+  const others = Object.entries(saved?.ratings || {}).filter(([n]) => n !== settings.name);
+  return `<div class="rate-card">
+    <div class="rate-head"><div><b>Ta note</b><small>${mine ? RATE_LABELS[mine] : saved?.status === 'seen' ? 'Tu l’as vu : qu’en as-tu pensé ?' : 'Déjà vu ? Note-le, il passe dans « Vus »'}</small></div>
+      <div class="stars big" role="radiogroup" aria-label="Ta note">${[1, 2, 3, 4, 5].map((v) => `<button class="${v <= mine ? 'on' : ''}" data-rate="${v}" aria-label="${v} sur 5 : ${RATE_LABELS[v]}" title="${RATE_LABELS[v]}">${icon('star')}</button>`).join('')}</div>
+    </div>
+    ${others.length ? `<div class="rate-others">${others.map(([n, v]) => `<span>${avatar(n)}<span class="mini-stars">${'★'.repeat(v)}<i>${'★'.repeat(5 - v)}</i></span></span>`).join('')}</div>` : ''}
+  </div>`;
 }
 
 function langName(code) {
@@ -1290,7 +1376,9 @@ function wireMovie(content, m, redraw) {
     } else if (b.dataset.want) listAction({ action: 'toggleWant', movieId: m.id, by: b.dataset.want }, after);
     else if (b.dataset.rate) {
       const v = Number(b.dataset.rate);
-      listAction({ action: 'rate', movieId: m.id, value: saved?.ratings?.[settings.name] === v ? 0 : v }, after);
+      const value = saved?.ratings?.[settings.name] === v ? 0 : v;
+      listAction({ action: 'rate', movieId: m.id, movie: saved ? undefined : m, value }, after);
+      if (value) toast(`${v}/5 · ${RATE_LABELS[v]}`);
     }
     redraw();
     refreshMovieUi(m.id);

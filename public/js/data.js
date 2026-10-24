@@ -176,3 +176,20 @@ export function senscritique(m) {
   }
   return scCache.get(m.id);
 }
+
+// ---------- Récompenses (Wikidata) ----------
+
+const awardsCache = new Map();
+export function awards(fest, year) {
+  const key = `${fest}|${year}`;
+  if (!awardsCache.has(key)) {
+    const p = fetch(`/api/awards?fest=${fest}&year=${year}`).then(async (r) => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `Erreur ${r.status}`);
+      return data;
+    });
+    awardsCache.set(key, p);
+    p.catch(() => awardsCache.delete(key));
+  }
+  return awardsCache.get(key);
+}

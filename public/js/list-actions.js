@@ -43,13 +43,20 @@ export function applyAction(list, body) {
       return { items };
     }
     case 'rate': {
-      if (idx === -1) fail('Film introuvable', 404);
       if (!by) fail('Prénom manquant');
+      // Noter un film qui n'est pas encore dans la liste l'ajoute comme « vu ».
+      if (idx === -1) {
+        if (!body.movie?.id) fail('Film introuvable', 404);
+        const added = applyAction({ items }, { action: 'add', movie: body.movie, status: 'seen', by });
+        return applyAction(added, { ...body, movie: undefined, movieId: body.movie.id });
+      }
       const ratings = { ...(items[idx].ratings || {}) };
       const value = Number(body.value);
       if (value >= 1 && value <= 5) ratings[by] = value;
       else delete ratings[by];
-      items[idx] = { ...items[idx], ratings };
+      // Une note veut dire qu'on l'a vu.
+      const seen = value >= 1 && items[idx].status !== 'seen' ? { status: 'seen', seenAt: new Date().toISOString() } : {};
+      items[idx] = { ...items[idx], ...seen, ratings };
       return { items };
     }
     case 'note': {
