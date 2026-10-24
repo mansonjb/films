@@ -201,6 +201,19 @@ async function themeParams(theme) {
   return { with_keywords: String(id) };
 }
 
+// ---------- Thème clair / sombre ----------
+
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+function applyTheme() {
+  const t = settings.theme;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  const dark = t === 'dark' || (t !== 'light' && darkQuery.matches);
+  $('meta[name="theme-color"]').content = dark ? '#0b0b0d' : '#ffffff';
+}
+darkQuery.addEventListener('change', applyTheme);
+applyTheme();
+
 // ---------- Navigation et rendu ----------
 
 const TITLES = { accueil: 'Accueil', liste: 'Notre liste', cine: 'Au cinéma', streaming: 'Streaming', explorer: 'Explorer', reglages: 'Réglages' };
@@ -869,6 +882,7 @@ async function renderReglages(view) {
       <div class="field"><label for="s-name">Ton prénom</label><input class="input" id="s-name" value="${esc(settings.name)}" required></div>
       <div class="field"><label for="s-code">Code famille</label><input class="input" id="s-code" value="${esc(settings.familyCode)}" autocomplete="off"></div>
       <div><button class="btn small">Enregistrer</button></div></form>`)}
+    ${sectionHtml('Apparence', `<div class="seg" id="theme-seg">${[['auto', 'Automatique'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<button class="${(settings.theme || 'auto') === k ? 'on' : ''}" data-th="${k}">${l}</button>`).join('')}</div>`, { sub: 'Automatique suit le réglage de l’iPhone ou de l’ordinateur' })}
     ${sectionHtml('Nos plateformes', `<div id="prov" class="provider-pick"><div class="sk" style="height:80px;grid-column:1/-1"></div></div>`, { sub: 'Mises en avant partout et utilisées pour les recommandations' })}
     ${sectionHtml(
       'Mes cinémas',
@@ -881,6 +895,13 @@ async function renderReglages(view) {
     ${sectionHtml('Installer sur l’iPhone', '<p class="hint">Dans Safari, bouton Partager puis « Sur l’écran d’accueil ». L’app s’ouvre alors en plein écran.</p>')}
     <p class="hint" style="margin-top:30px">Films et plateformes : TMDB et JustWatch. Séances : Allociné. Notes : SensCritique.<br>Ce produit utilise l’API TMDB mais n’est ni approuvé ni certifié par TMDB.</p>`;
 
+  $('#theme-seg').onclick = (e) => {
+    const b = e.target.closest('[data-th]');
+    if (!b) return;
+    saveSettings({ theme: b.dataset.th });
+    applyTheme();
+    $$('#theme-seg button').forEach((x) => x.classList.toggle('on', x === b));
+  };
   $('#me').addEventListener('submit', (e) => {
     e.preventDefault();
     saveSettings({ name: $('#s-name').value.trim(), familyCode: $('#s-code').value.trim() });

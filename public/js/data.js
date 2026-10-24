@@ -6,7 +6,7 @@ export const IMG = 'https://image.tmdb.org/t/p/';
 
 // ---------- Réglages (gardés sur le téléphone) ----------
 
-const DEFAULT_SETTINGS = { name: '', familyCode: '', providers: [], theaters: [] };
+const DEFAULT_SETTINGS = { name: '', familyCode: '', providers: [], theaters: [], theme: 'auto' };
 
 function loadSettings() {
   try {
