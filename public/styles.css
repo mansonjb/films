@@ -98,7 +98,7 @@ svg { width: 20px; height: 20px; flex: none; }
 .icon-btn:hover { background: var(--surface-3); }
 .icon-btn svg { width: 19px; height: 19px; }
 .icon-btn.glass { color: #fff; background: rgba(20, 20, 24, .62); backdrop-filter: blur(20px) saturate(180%); -webkit-backdrop-filter: blur(20px) saturate(180%); border: 1px solid var(--line); }
-.tools { position: sticky; top: calc(var(--safe-t) + 58px); z-index: 9; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px var(--gutter) 12px; background: var(--bg); }
+.tools { position: sticky; top: calc(var(--topbar-h, 58px) - 1px); z-index: 9; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px var(--gutter) 12px; background: var(--bg); }
 .tools::-webkit-scrollbar { display: none; }
 .tools:empty { display: none; }
 .view { padding: 4px var(--gutter) calc(100px + var(--safe-b)); }
@@ -561,3 +561,7 @@ html, body { overflow-x: clip; }
 .badge.near span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .badge.near svg { width: 11px; height: 11px; flex: none; }
 .chip svg { width: 15px; height: 15px; }
+
+/* En-tête collant : quand il y a des filtres, fond plein et filet discret pour ne rien laisser passer dessous */
+.main:has(.tools:not([hidden]):not(:empty)) .topbar { background: var(--bg); }
+.tools { box-shadow: 0 1px 0 var(--line); }

@@ -1732,6 +1732,8 @@ document.addEventListener('visibilitychange', () => {
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
+// Hauteur réelle de l'en-tête, pour coller la barre de filtres juste dessous.
+new ResizeObserver(([e]) => document.documentElement.style.setProperty('--topbar-h', `${Math.round(e.target.getBoundingClientRect().height)}px`)).observe($('.topbar'));
 drawSidebar();
 loadNearby();
 render();
