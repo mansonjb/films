@@ -234,6 +234,46 @@ function setTools(html, onClick) {
 function updateSideCounts() {
   const n = list.items.filter((i) => i.status === 'todo').length;
   $('#count-todo').textContent = n || '';
+  $('#count-cine').textContent = nowPlayingIds.size || '';
+  drawSideList();
+}
+
+// Barre latérale (ordinateur) : à voir ce soir, plateformes, famille.
+let sideToken = 0;
+async function drawSideList() {
+  if (!matchMedia('(min-width: 1024px)').matches) return;
+  const token = ++sideToken;
+  const todo = list.items.filter((i) => i.status === 'todo');
+  const box = $('#side-tonight');
+  if (!todo.length) {
+    box.innerHTML = listLoaded ? `<div class="side-label">À voir</div><button class="side-mini" data-tab="explorer"><span class="poster-wrap" style="display:grid;place-items:center">${icon('plus')}</span><span><b>Ajouter un film</b><small>Explorez les tendances</small></span></button>` : '';
+  } else {
+    const mine = new Set(settings.providers);
+    const avail = await Promise.all(todo.map((i) => providersFor(i.id)));
+    if (token !== sideToken) return;
+    const rows = todo.map((i, k) => ({ i, p: (avail[k]?.flatrate || []).find((p) => mine.has(p.provider_id)) }));
+    const score = (r) => (r.p ? 3 : 0) + (nowPlayingIds.has(r.i.id) ? 2 : 0) + (r.i.wants?.length || 0);
+    rows.sort((a, b) => score(b) - score(a));
+    const sub = ({ i, p }) =>
+      p
+        ? `<img src="${IMG}w92${p.logo_path}" alt="">${esc(p.provider_name)}`
+        : nowPlayingIds.has(i.id)
+          ? '<span class="hot">Au cinéma</span>'
+          : isFuture(i.release_date)
+            ? `<span class="soon">Sortie J-${daysUntil(i.release_date)}</span>`
+            : esc([year(i.release_date), ...genreNames(i, 1)].filter(Boolean).join(' · '));
+    box.innerHTML =
+      `<div class="side-label">À voir ce soir<button class="side-edit" data-tab="liste">Tout (${todo.length})</button></div>` +
+      rows
+        .slice(0, 5)
+        .map((r) => `<button class="side-mini" data-movie="${r.i.id}">${posterBox(r.i.poster_path, '', 'w92')}<span><b>${esc(r.i.title)}</b><small>${sub(r)}</small></span></button>`)
+        .join('');
+  }
+  const names = [...new Set(list.items.flatMap((i) => [i.addedBy, ...(i.wants || [])]).filter((n) => n && n !== '?'))];
+  const seen = list.items.filter((i) => i.status === 'seen').length;
+  $('#side-family').innerHTML = names.length
+    ? `<div class="side-label">La famille</div><div class="side-family"><span class="avatars">${names.map(avatar).join('')}</span><span>${names.length} membre${names.length > 1 ? 's' : ''} · ${seen} vu${seen > 1 ? 's' : ''}</span></div>`
+    : '';
 }
 
 function drawSidebar() {
@@ -242,11 +282,15 @@ function drawSidebar() {
   loadAllProviders()
     .then((all) => {
       const mine = all.filter((p) => settings.providers.includes(p.provider_id));
-      $('#side-providers').innerHTML = mine.length
+      const el = $('#side-providers');
+      el.classList.toggle('empty-pick', !mine.length);
+      el.innerHTML = mine.length
         ? mine.map((p) => `<button data-provider="${p.provider_id}" title="${esc(p.provider_name)}"><img src="${IMG}w92${p.logo_path}" alt="${esc(p.provider_name)}"></button>`).join('')
-        : '<button class="link" data-tab="reglages">Choisir…</button>';
+        : all.slice(0, 5).map((p) => `<button data-tab="reglages" title="${esc(p.provider_name)}"><img src="${IMG}w92${p.logo_path}" alt=""></button>`).join('') +
+          '<button class="side-cta" data-tab="reglages">Choisir vos abonnements →</button>';
     })
     .catch(() => {});
+  drawSideList();
 }
 
 let renderToken = 0;
@@ -1528,5 +1572,6 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').cat
 
 drawSidebar();
 render();
+Promise.all([listLoaded || !settings.name ? null : fetchList().catch(() => {}), loadNowPlaying().catch(() => {})]).then(updateSideCounts);
 const hashFilm = location.hash.match(/^#film-(\d+)$/);
 if (hashFilm && settings.name) pushSheet({ type: 'movie', id: Number(hashFilm[1]) });

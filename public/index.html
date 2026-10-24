@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://image.tmdb.org" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&family=Inter+Tight:wght@600..800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -44,18 +44,19 @@
 
   <div class="app">
     <aside class="sidebar" aria-label="Navigation">
-      <div class="brand"><span class="brand-mark"><svg><use href="#i-play"/></svg></span>Nos films</div>
+      <div class="brand"><span class="brand-mark"><svg><use href="#i-play"/></svg></span><span>Nos <i>films</i></span></div>
       <button class="side-search" data-open-search><svg><use href="#i-search"/></svg>Rechercher<kbd>⌘K</kbd></button>
       <nav class="side-nav">
         <button data-tab="accueil"><svg><use href="#i-home"/></svg>Accueil</button>
         <button data-tab="liste"><svg><use href="#i-list"/></svg>Notre liste<span class="count" id="count-todo"></span></button>
-        <button data-tab="cine"><svg><use href="#i-cine"/></svg>Au cinéma</button>
+        <button data-tab="cine"><svg><use href="#i-cine"/></svg>Au cinéma<span class="count" id="count-cine"></span></button>
         <button data-tab="streaming"><svg><use href="#i-tv"/></svg>Streaming</button>
         <button data-tab="explorer"><svg><use href="#i-search"/></svg>Explorer</button>
       </nav>
-      <div class="side-section">
-        <div class="side-label">Nos plateformes</div>
-        <div id="side-providers" class="side-providers"></div>
+      <div class="side-scroll">
+        <div class="side-section" id="side-tonight"></div>
+        <div class="side-section"><div class="side-label">Nos plateformes<button class="side-edit" data-tab="reglages">Modifier</button></div><div id="side-providers" class="side-providers"></div></div>
+        <div class="side-section" id="side-family"></div>
       </div>
       <button class="side-user" data-tab="reglages"><span id="side-avatar"></span><span><b id="side-name">Profil</b><small>Réglages</small></span><svg><use href="#i-gear"/></svg></button>
     </aside>
