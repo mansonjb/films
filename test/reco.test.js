@@ -32,7 +32,7 @@ globalThis.fetch = async (url) => {
 };
 const slim = (m) => m && { id: m.id, title: m.title, release_date: m.release_date, genre_ids: m.genre_ids, vote_count: m.vote_count, vote_average: m.vote_average, popularity: 50 };
 
-const { buildProfile, recommend, isAnimation, isBlockbuster, isUsMainstream, originBonus, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
+const { buildProfile, recommend, isActionFlick, wellRated, isAnimation, isBlockbuster, isUsMainstream, originBonus, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
 
 // Candidats : 100-199 thrillers du réalisateur 1, 200-299 comédies, 300-399 drames variés (réalisateurs différents).
 for (let i = 100; i < 140; i++) film(i, { g: [53], d: 1, k: [7] });
@@ -111,4 +111,14 @@ test('les films d’animation sont reconnus, toutes origines', () => {
   assert.equal(isAnimation(featuresOf({ title: 'x', genres: [{ id: 16 }, { id: 18 }], origin_country: ['FR'] })), true);
   assert.equal(isAnimation(null, { genre_ids: [16] }), true);
   assert.equal(isAnimation(null, { genre_ids: [18] }), false);
+});
+
+test('films d’action en anglais écartés même en coproduction française, note minimale', () => {
+  const f = (g, l, o) => featuresOf({ title: 'x', genres: g.map((id) => ({ id })), original_language: l, origin_country: o });
+  assert.equal(isActionFlick(f([28, 53], 'en', ['FR', 'US'])), true, 'Overdrive');
+  assert.equal(isActionFlick(f([28, 53, 18], 'fr', ['FR']), { vote_average: 6.8 }), false, 'polar d’action français');
+  assert.equal(isActionFlick(f([53, 18], 'en', ['GB'])), false);
+  assert.equal(wellRated({ vote_average: 6.1, vote_count: 900 }), false);
+  assert.equal(wellRated({ vote_average: 7.2, vote_count: 900 }), true);
+  assert.equal(wellRated({ vote_average: 5, vote_count: 10 }), true, 'trop peu de votes pour juger');
 });

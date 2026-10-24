@@ -84,6 +84,20 @@ export function originBonus(f, m = {}) {
 // Dessins animés et films d'animation, de toutes origines : jamais recommandés.
 export const isAnimation = (f, m = {}) => (f ? f.g.map((g) => g[0]) : m.genre_ids || []).includes(16);
 
+// Films d'action « de divertissement », quelle que soit leur origine : tournés en anglais (coproductions comprises),
+// ou d'une autre langue que le français et moyennement notés. Les polars d'action français restent possibles.
+export function isActionFlick(f, m = {}) {
+  const genres = f ? f.g.map((g) => g[0]) : m.genre_ids || [];
+  if (!genres.includes(28)) return false;
+  const lang = f?.l || m.original_language;
+  if (lang === 'en') return true;
+  return lang !== 'fr' && (m.vote_average || 0) < 7;
+}
+
+// Note minimale pour être recommandé (TMDB, sur 10), dès qu'il y a assez de votes pour qu'elle veuille dire quelque chose.
+export const RECO_MIN_VOTE = 6.6;
+export const wellRated = (m) => (m.vote_count || 0) < 40 || (m.vote_average || 0) >= RECO_MIN_VOTE;
+
 // Blockbusters : gros budget, ou grande saga d'action, d'aventure, de science-fiction ou de fantastique.
 // La famille les a vus mais n'en veut pas en recommandation, ni comme point de départ.
 const SPECTACLE = new Set([28, 12, 878, 14]);
@@ -101,7 +115,7 @@ const KINDS = {
   g: { w: 1, label: (n) => `Vous aimez : ${n.toLowerCase()}` },
   k: { w: 0.9, label: (n) => `Thème : ${n}` },
   d: { w: 1.6, label: (n) => `Réalisé par ${n}` },
-  a: { w: 0.8, label: (n) => `Avec ${n}` },
+  a: { w: 0.45, label: (n) => `Avec ${n}` },
   e: { w: 0.4, label: () => '' },
   l: { w: 0.5, label: () => '' },
 };
@@ -141,7 +155,7 @@ export function contentScore(f, taste) {
     if (!p) continue;
     (byKind[t.kind] ||= []).push(p.aff);
     const s = p.aff * KINDS[t.kind].w;
-    if (KINDS[t.kind].label(t.name) && p.aff > 0.2 && p.n >= (t.kind === 'g' ? 2 : 1) && (!best || s > best.s)) best = { s, why: KINDS[t.kind].label(p.name) };
+    if (KINDS[t.kind].label(t.name) && p.aff > 0.2 && p.n >= (t.kind === 'g' || t.kind === 'a' ? 2 : 1) && (!best || s > best.s)) best = { s, why: KINDS[t.kind].label(p.name) };
   }
   let score = 0;
   for (const [kind, affs] of Object.entries(byKind)) {
@@ -322,12 +336,12 @@ export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid =
     const c = contentScore(r.f, profile.taste);
     r.score = c.score + quality(r.m) + r.collab * 0.8 + (noBlockbusters ? originBonus(r.f, r.m) : 0);
     const titles = r.seeds.map((s) => profile.liked.find((l) => l.id === s)?.title).filter(Boolean);
-    const strong = /^(Réalisé par|Avec) /.test(c.why);
+    const strong = /^Réalisé par /.test(c.why);
     r.why = titles.length >= 2 ? `Comme ${titles[0]} et ${titles[1]}` : strong ? c.why : titles[0] ? `Comme ${titles[0]}` : c.why;
   });
   // Les films sans fiche lue passent après ceux qu'on a vraiment comparés.
   ranked.slice(deep).forEach((r) => (r.score -= 1));
-  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m) && !isUsMainstream(r.f, r.m) && !isAnimation(r.f, r.m));
+  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m) && !isUsMainstream(r.f, r.m) && !isAnimation(r.f, r.m) && !isActionFlick(r.f, r.m) && wellRated(r.m));
   return diversify(ranked.sort((a, b) => b.score - a.score), limit).map((r) => ({ ...r.m, _why: r.why || '' }));
 }
 
