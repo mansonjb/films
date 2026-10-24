@@ -266,12 +266,14 @@ select.chip { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 @media (min-width: 1400px) { .rail { grid-auto-columns: 170px; } }
 
 /* Top 10 avec grands chiffres */
-.rail.top { grid-auto-columns: calc((100% - 10px) / 2.2); }
-@media (min-width: 640px) { .rail.top { grid-auto-columns: 220px; } }
-.top-item { display: grid; grid-template-columns: 44% 56%; align-items: end; }
-.top-item .rank { font: 800 clamp(84px, 22vw, 130px)/0.8 var(--display); letter-spacing: -0.08em; color: var(--bg); -webkit-text-stroke: 2px var(--faint); text-align: right; margin-right: -6px; z-index: 0; user-select: none; }
-.top-item .card { z-index: 1; }
-@media (min-width: 640px) { .top-item .rank { font-size: 140px; } }
+.rail.top { grid-auto-columns: calc((100% - 10px) / 2.1); }
+/* Top 10 : grand chiffre plein, posé contre l'affiche, sans toucher le titre */
+.top-item { position: relative; padding-left: 40%; }
+.top-item .rank { position: absolute; left: 0; bottom: 50px; width: 40%; text-align: right; font: 800 clamp(88px, 22vw, 140px)/.74 var(--display); letter-spacing: 0; color: var(--text); padding-right: 8px; z-index: 0; user-select: none; font-variant-numeric: lining-nums; }
+.top-item .rank.two { letter-spacing: -0.06em; font-size: clamp(54px, 14vw, 84px); }
+.top-item .card { position: relative; z-index: 1; }
+.top-item .card .poster-wrap { box-shadow: -8px 0 16px -6px rgba(0,0,0,.45), 0 0 0 1px var(--line) inset; }
+@media (min-width: 1024px) { .rail.top { grid-auto-columns: 300px; } .top-item .rank { font-size: 150px; } .top-item .rank.two { font-size: 92px; } }
 
 /* ---------- Bannière (hero) ---------- */
 .hero {
@@ -370,7 +372,8 @@ select.chip { appearance: none; -webkit-appearance: none; padding-right: 30px; b
 .sheet-panel.settle { transition: transform .3s var(--spring); }
 @keyframes sheetUp { from { transform: translateY(100%); } }
 .grabber { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 36px; height: 5px; border-radius: 3px; background: rgba(128,128,128,.45); z-index: 5; }
-.sheet-nav { position: sticky; top: 0; z-index: 4; display: flex; justify-content: space-between; padding: 14px 14px 0; height: 0; }
+.sheet-nav { position: sticky; top: 0; z-index: 4; display: flex; justify-content: space-between; padding: 0 14px; height: 0; overflow: visible; }
+.sheet-nav > * { margin-top: 14px; }
 #sheet-content { position: relative; }
 @media (min-width: 1024px) {
   .sheet-panel { left: 50%; top: 4vh; bottom: 4vh; width: min(1080px, 92vw); transform: translateX(-50%); border-radius: 18px; animation: pop .32s var(--spring); box-shadow: 0 30px 80px var(--shadow), 0 0 0 1px var(--line-2); padding-bottom: 40px; }

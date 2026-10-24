@@ -77,7 +77,7 @@ function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false 
 
 const gridHtml = (arr, opts) => (arr.length ? `<div class="grid">${arr.map((m) => movieCard(m, opts)).join('')}</div>` : '<div class="empty"><b>Aucun film trouvé</b>Essaie un autre filtre.</div>');
 const railHtml = (arr, opts) => `<div class="rail">${arr.map((m) => movieCard(m, opts)).join('')}</div>`;
-const topHtml = (arr) => `<div class="rail top">${arr.slice(0, 10).map((m, k) => `<div class="top-item"><span class="rank">${k + 1}</span>${movieCard(m)}</div>`).join('')}</div>`;
+const topHtml = (arr) => `<div class="rail top">${arr.slice(0, 10).map((m, k) => `<div class="top-item"><span class="rank ${k === 9 ? 'two' : ''}">${k + 1}</span>${movieCard(m)}</div>`).join('')}</div>`;
 const skItem = '<div><div class="sk" style="aspect-ratio:2/3"></div><div class="sk sk-line"></div></div>';
 const skGrid = (n = 12) => `<div class="grid">${skItem.repeat(n)}</div>`;
 const skRail = (n = 8) => `<div class="rail">${skItem.repeat(n)}</div>`;
