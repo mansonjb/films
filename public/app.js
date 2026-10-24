@@ -58,6 +58,7 @@ const genreNames = (m, n = 2) => (m.genres ? m.genres.map((g) => g.name) : (m.ge
 
 // titre normalisé -> noms des cinémas (séances d'aujourd'hui et des 2 jours suivants)
 let nearby = new Map();
+let nearbyIds = new Map(); // titre normalisé -> identifiants des cinémas
 let nearbyLoaded = null;
 function loadNearby() {
   if (!settings.theaters.length) return Promise.resolve(nearby);
@@ -65,20 +66,36 @@ function loadNearby() {
   const days = nextDays(3).map((d) => d.iso);
   nearbyLoaded = Promise.all(settings.theaters.flatMap((t) => days.map((day) => seances(t.id, day).then((d) => ({ t, d })).catch(() => null)))).then((res) => {
     const map = new Map();
+    const ids = new Map();
     for (const r of res.filter(Boolean)) {
       for (const mv of r.d.movies || []) {
         for (const key of [normalize(mv.title), normalize(mv.originalTitle)].filter(Boolean)) {
           if (!map.has(key)) map.set(key, new Set());
           map.get(key).add(r.t.name || r.d.theaterName || r.t.id);
+          if (!ids.has(key)) ids.set(key, new Set());
+          ids.get(key).add(r.t.id);
         }
       }
     }
     nearby = map;
+    nearbyIds = ids;
     markNearby(document);
     return map;
   });
   return nearbyLoaded;
 }
+// Le film passe-t-il dans l'un des cinémas cochés ?
+function playsIn(m, picked) {
+  const set = nearbyIds.get(normalize(m.title)) || nearbyIds.get(normalize(m.original_title));
+  return !!set && [...set].some((id) => picked.has(id));
+}
+// Cinémas cochés dans « Au cinéma » (aucun = tous les films).
+const cinePicked = () => new Set((settings.cinePick || []).filter((id) => settings.theaters.some((t) => t.id === id)));
+const theaterChips = () =>
+  settings.theaters.length
+    ? `<span class="sep"></span>${settings.theaters.map((t) => `<button class="chip ${cinePicked().has(t.id) ? 'on' : ''}" data-cpick="${esc(t.id)}" aria-pressed="${cinePicked().has(t.id)}">${icon(cinePicked().has(t.id) ? 'check' : 'ticket')}${esc(t.name || t.id)}</button>`).join('')}`
+    : '';
+
 function nearbyFor(m) {
   if (!m) return null;
   const set = nearby.get(normalize(m.title)) || nearby.get(normalize(m.original_title));
@@ -314,7 +331,7 @@ const vs = {
   listeStatus: 'todo', listeFilter: 'all', listeSort: 'wants', listeView: 'rows', listeGroup: false, listeDur: '',
   cineMode: 'now', cineDay: today(),
   streamProvider: 'mine', streamSort: 'popular', streamGenre: '',
-  prixFest: 'cannes', prixYear: 0, cineFr: false, cineNear: false,
+  prixFest: 'cannes', prixYear: 0, cineFr: false,
 };
 
 function setTools(html, onClick) {
@@ -760,14 +777,17 @@ function nextDays(n = 7) {
 async function renderCine(view, alive) {
   setTools(
     `<div class="seg">${[['now', "À l'affiche"], ['soon', 'Prochainement'], ['prog', 'Séances']].map(([k, l]) => `<button class="${vs.cineMode === k ? 'on' : ''}" data-cm="${k}">${l}</button>`).join('')}</div>` +
-      (vs.cineMode === 'now' && settings.theaters.length ? `<button class="chip ${vs.cineNear ? 'on' : ''}" data-cnear="1">${icon('ticket')}Dans mes cinémas</button>` : '') +
-      (vs.cineMode !== 'prog' ? `<button class="chip ${vs.cineFr ? 'on' : ''}" data-cfr="1">Films français</button>` : ''),
+      (vs.cineMode !== 'prog' ? `<button class="chip ${vs.cineFr ? 'on' : ''}" data-cfr="1">Films français</button>` : '') +
+      (vs.cineMode !== 'soon' ? theaterChips() : ''),
     (e) => {
-      const b = e.target.closest('[data-cm], [data-cfr], [data-cnear]');
+      const b = e.target.closest('[data-cm], [data-cfr], [data-cpick]');
       if (!b) return;
       if (b.dataset.cm) vs.cineMode = b.dataset.cm;
-      else if (b.dataset.cnear) vs.cineNear = !vs.cineNear;
-      else vs.cineFr = !vs.cineFr;
+      else if (b.dataset.cpick) {
+        const picked = cinePicked();
+        picked.has(b.dataset.cpick) ? picked.delete(b.dataset.cpick) : picked.add(b.dataset.cpick);
+        saveSettings({ cinePick: [...picked] });
+      } else vs.cineFr = !vs.cineFr;
       render(false);
     },
   );
@@ -781,11 +801,21 @@ async function renderCine(view, alive) {
     await loadNearby();
     if (!alive()) return;
     const nearCount = now.filter((m) => nearbyFor(m)).length;
-    if (vs.cineNear) now = now.filter((m) => nearbyFor(m));
-    // Les films qui passent près de chez nous d'abord.
-    now.sort((a, b) => !!nearbyFor(b) - !!nearbyFor(a));
-    const info = settings.theaters.length ? ` · ${nearCount} dans vos cinémas cette semaine` : ' · ajoutez vos cinémas dans Réglages pour voir ceux qui passent près de chez vous';
-    view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films ${vs.cineFr ? 'français ' : ''}à l’affiche${info}</p>` + gridHtml(now, { noCine: true });
+    const picked = cinePicked();
+    if (picked.size) now = now.filter((m) => playsIn(m, picked));
+    const where = settings.theaters.filter((t) => picked.has(t.id)).map((t) => t.name || t.id);
+    const info = !settings.theaters.length
+      ? ' · ajoutez vos cinémas dans Réglages pour voir ceux qui passent près de chez vous'
+      : picked.size
+        ? ` · ${where.length > 1 ? `dans ${where.length} de vos cinémas` : `au ${where[0]}`} ces 3 prochains jours · <button class="link" data-cpick-clear>Voir toutes les sorties</button>`
+        : ` · dont ${nearCount} dans vos cinémas · cochez un cinéma pour ne voir que sa programmation`;
+    view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films ${vs.cineFr ? 'français ' : ''}à l’affiche${info}</p>` + (now.length || !picked.size ? gridHtml(now, { noCine: true }) : '<div class="empty"><b>Aucun film trouvé</b>Pas de séance repérée dans ce cinéma ces prochains jours.</div>');
+    const clear = $('[data-cpick-clear]', view);
+    if (clear)
+      clear.onclick = () => {
+        saveSettings({ cinePick: [] });
+        render(false);
+      };
     hydrate(view);
     return;
   }
@@ -815,6 +845,10 @@ async function frenchOnly(arr) {
   return cands.filter((m, k) => !det[k] || (det[k].origin_country || det[k].production_countries?.map((c) => c.iso_3166_1) || []).includes('FR'));
 }
 
+const shownTheaters = () => {
+  const picked = cinePicked();
+  return picked.size ? settings.theaters.filter((t) => picked.has(t.id)) : settings.theaters;
+};
 async function renderProgramme(view, alive) {
   if (!settings.theaters.length) {
     view.innerHTML = `<div class="empty"><b>Aucun cinéma enregistré</b>Ajoutez vos cinémas pour voir leurs séances ici.</div><div style="text-align:center"><button class="btn" data-tab="reglages">Ajouter un cinéma</button></div>`;
@@ -822,7 +856,7 @@ async function renderProgramme(view, alive) {
   }
   view.innerHTML =
     `<div class="days">${nextDays(7).map((d) => `<button class="chip ${vs.cineDay === d.iso ? 'on' : ''}" data-day="${d.iso}">${esc(d.label)}</button>`).join('')}</div>` +
-    settings.theaters.map((t) => `<section class="section" data-theater="${esc(t.id)}"><div class="section-head"><h2>${esc(t.name || t.id)}</h2></div><div class="sk" style="height:140px"></div></section>`).join('');
+    shownTheaters().map((t) => `<section class="section" data-theater="${esc(t.id)}"><div class="section-head"><h2>${esc(t.name || t.id)}</h2></div><div class="sk" style="height:140px"></div></section>`).join('');
   $('.days', view).onclick = (e) => {
     const b = e.target.closest('[data-day]');
     if (b) {
@@ -832,7 +866,7 @@ async function renderProgramme(view, alive) {
   };
   const listKeys = new Map(list.items.filter((i) => i.status === 'todo').flatMap((i) => [[normalize(i.title), i], [normalize(i.original_title), i]]));
   const mineOf = (m) => listKeys.get(normalize(m.title)) || listKeys.get(normalize(m.originalTitle));
-  for (const t of settings.theaters) {
+  for (const t of shownTheaters()) {
     const box = view.querySelector(`[data-theater="${CSS.escape(t.id)}"]`);
     seances(t.id, vs.cineDay)
       .then((d) => {
