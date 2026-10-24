@@ -81,6 +81,9 @@ export function originBonus(f, m = {}) {
   return o.includes('US') ? -0.35 : 0;
 }
 
+// Dessins animés et films d'animation, de toutes origines : jamais recommandés.
+export const isAnimation = (f, m = {}) => (f ? f.g.map((g) => g[0]) : m.genre_ids || []).includes(16);
+
 // Blockbusters : gros budget, ou grande saga d'action, d'aventure, de science-fiction ou de fantastique.
 // La famille les a vus mais n'en veut pas en recommandation, ni comme point de départ.
 const SPECTACLE = new Set([28, 12, 878, 14]);
@@ -263,7 +266,7 @@ export async function buildProfile(items) {
   // Un blockbuster vu et apprécié ne sert pas de base : seules les déceptions comptent encore.
   const entries = now
     .map((x, k) => ({ id: x.item.id, title: x.item.title, w: x.w, f: feats[k] }))
-    .filter((e) => e.f && !(e.w > 0 && isBlockbuster(e.f)));
+    .filter((e) => e.f && !(e.w > 0 && (isBlockbuster(e.f) || isAnimation(e.f))));
 
   const taste = buildTaste(entries);
   const liked = entries
@@ -324,7 +327,7 @@ export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid =
   });
   // Les films sans fiche lue passent après ceux qu'on a vraiment comparés.
   ranked.slice(deep).forEach((r) => (r.score -= 1));
-  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m) && !isUsMainstream(r.f, r.m));
+  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m) && !isUsMainstream(r.f, r.m) && !isAnimation(r.f, r.m));
   return diversify(ranked.sort((a, b) => b.score - a.score), limit).map((r) => ({ ...r.m, _why: r.why || '' }));
 }
 

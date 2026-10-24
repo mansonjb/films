@@ -32,7 +32,7 @@ globalThis.fetch = async (url) => {
 };
 const slim = (m) => m && { id: m.id, title: m.title, release_date: m.release_date, genre_ids: m.genre_ids, vote_count: m.vote_count, vote_average: m.vote_average, popularity: 50 };
 
-const { buildProfile, recommend, isBlockbuster, isUsMainstream, originBonus, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
+const { buildProfile, recommend, isAnimation, isBlockbuster, isUsMainstream, originBonus, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
 
 // Candidats : 100-199 thrillers du réalisateur 1, 200-299 comédies, 300-399 drames variés (réalisateurs différents).
 for (let i = 100; i < 140; i++) film(i, { g: [53], d: 1, k: [7] });
@@ -105,4 +105,10 @@ test('cinéma grand public américain écarté, cinéma français et européen f
   assert.equal(isUsMainstream(null, { genre_ids: [28], original_language: 'en' }), true);
   assert.ok(originBonus(f([18], ['FR'], 'fr')) > originBonus(f([18], ['DK'], 'da')));
   assert.ok(originBonus(f([18], ['DK'], 'da')) > originBonus(f([18], ['US'])));
+});
+
+test('les films d’animation sont reconnus, toutes origines', () => {
+  assert.equal(isAnimation(featuresOf({ title: 'x', genres: [{ id: 16 }, { id: 18 }], origin_country: ['FR'] })), true);
+  assert.equal(isAnimation(null, { genre_ids: [16] }), true);
+  assert.equal(isAnimation(null, { genre_ids: [18] }), false);
 });

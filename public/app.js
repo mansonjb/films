@@ -493,6 +493,9 @@ async function renderAccueil(view, alive) {
   const blocks = [];
   if (todo.length) blocks.push({ id: 'tonight', title: 'À voir ce soir', sub: 'Dans votre liste et sur vos plateformes' });
   blocks.push({ id: 'reco', title: 'Recommandés pour vous', sub: profile ? tasteLine(profile) : 'Ajoutez et notez des films pour les affiner' });
+  blocks.push({ id: 'canal', title: 'Cinéma français façon Canal+', sub: 'Films français récents, sur Canal+ en priorité' });
+  blocks.push({ id: 'euro', title: 'Cinéma européen et d’ailleurs', sub: 'Films d’auteur hors États-Unis, bien notés' });
+  blocks.push({ id: 'fest', title: 'Pépites de festival', sub: 'Palmarès et sélections de Cannes, Venise et Berlin' });
   blocks.push({ id: 'top', title: 'Top 10 de la semaine', sub: 'Les films les plus regardés en ce moment' });
   blocks.push({ id: 'stream', title: 'Sur vos plateformes', sub: settings.providers.length ? 'Choisis pour vous' : '' });
   blocks.push({ id: 'soon', title: 'Bientôt au cinéma', sub: profile ? 'Les sorties qui vous ressemblent' : 'Les prochaines sorties' });
@@ -538,11 +541,43 @@ async function renderAccueil(view, alive) {
     const now = remember(await pages('movie/now_playing', {}, 3));
     fillRail('now', profile ? remember(await deepRank(now, profile, { limit: 24, deep: 14 })) : now);
   });
+  // Rangées de recommandations « autres » : remplies l'une après l'autre pour ne pas se répéter.
+  const shown = new Set(recoIds);
+  const pick = async (arr, opts = {}) => {
+    const NOANIM = (m) => !(m.genre_ids || []).includes(16);
+    const out = profile ? await deepRank(arr, profile, { limit: 24, deep: 24, avoid: shown, noBlockbusters: true, ...opts }) : arr.filter((m) => NOANIM(m) && isRecent(m) && !shown.has(m.id));
+    out.slice(0, 14).forEach((m) => shown.add(m.id));
+    return remember(out);
+  };
+  (async () => {
+    await safe('canal', async () => {
+      const base = { with_origin_country: 'FR', with_original_language: 'fr', without_genres: '16', sort_by: 'popularity.desc', 'primary_release_date.gte': '2016-01-01', 'vote_count.gte': 40 };
+      let arr = await pages('discover/movie', { ...base, watch_region: 'FR', with_watch_providers: '381' }, 3);
+      if (arr.length < 10) arr = [...arr, ...(await pages('discover/movie', base, 2))];
+      fillRail('canal', await pick(arr), { logos: true });
+    });
+    await safe('euro', async () => {
+      const base = { with_origin_country: 'BE|CH|ES|IT|DE|AT|DK|SE|NO|FI|IS|GB|IE|PL|PT|GR|RO|HU|CZ|KR|JP|IR|TR|IL|AR|MX|BR|CL|CO', without_genres: '16|10751', sort_by: 'popularity.desc', 'vote_average.gte': 6.8, 'vote_count.gte': 150, 'primary_release_date.gte': RECO_MIN_DATE };
+      fillRail('euro', await pick(await pages('discover/movie', base, 3)), { logos: true });
+    });
+    await safe('fest', async () => {
+      const y = new Date().getFullYear();
+      const res = await Promise.all(['cannes', 'venise', 'berlin'].flatMap((f) => [y, y - 1].map((yy) => awards(f, yy).catch(() => null))));
+      const why = new Map();
+      const all = [];
+      res.filter(Boolean).forEach((r) => {
+        r.winners.forEach((m) => (why.has(m.id) || why.set(m.id, `${m._award} · ${r.festival} ${r.year}`), all.push(m)));
+        r.selection.forEach((m) => (why.has(m.id) || why.set(m.id, `Sélection ${r.festival} ${r.year}`), all.push(m)));
+      });
+      const ranked = await pick(all, { deep: 30 });
+      fillRail('fest', ranked.map((m) => ({ ...m, _why: why.get(m.id) || m._why })));
+    });
+  })();
   safe('fr', async () => {
     const recent = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
     const base = { with_origin_country: 'FR', with_original_language: 'fr', sort_by: 'popularity.desc', 'primary_release_date.gte': recent, 'vote_count.gte': 5 };
     const fr = remember(await pages('discover/movie', base, 3));
-    fillRail('fr', profile ? remember(await deepRank(fr, profile, { limit: 30, deep: 12 })) : fr, { logos: true });
+    fillRail('fr', profile ? remember(await deepRank(fr.filter((m) => !(m.genre_ids || []).includes(16)), profile, { limit: 30, deep: 12, avoid: recoIds })) : fr, { logos: true });
   });
   for (const b of blocks.filter((x) => x.seed))
     safe(b.id, async () => {
