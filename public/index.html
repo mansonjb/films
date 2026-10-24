@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nos films</title>
+  <meta name="theme-color" content="#111318">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Nos films">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="view-title">Notre liste</h1>
+    <div id="view-tools" class="tools"></div>
+  </header>
+
+  <main id="view" class="view" aria-live="polite"></main>
+
+  <nav class="tabbar" aria-label="Navigation">
+    <button data-tab="liste" class="active"><span class="ico">★</span><span>Liste</span></button>
+    <button data-tab="cine"><span class="ico">🎬</span><span>Ciné</span></button>
+    <button data-tab="streaming"><span class="ico">▶</span><span>Streaming</span></button>
+    <button data-tab="recherche"><span class="ico">⌕</span><span>Chercher</span></button>
+    <button data-tab="reglages"><span class="ico">⚙</span><span>Réglages</span></button>
+  </nav>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <article class="sheet-panel" role="dialog" aria-modal="true">
+      <button class="sheet-close" data-close aria-label="Fermer">✕</button>
+      <div id="sheet-content"></div>
+    </article>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
