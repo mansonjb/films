@@ -2,7 +2,7 @@
 // Données : TMDB (films, plateformes JustWatch), Allociné (séances), SensCritique (note).
 
 import {
-  IMG, settings, saveSettings, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
+  IMG, settings, saveSettings, critiques, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
   keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique, awards,
 } from './js/data.js';
 import { buildProfile, topEntries, deepRank, recommendationsFrom } from './js/reco.js';
@@ -1308,6 +1308,8 @@ function movieHtml(m) {
     ${m.tagline ? `<p class="hint" style="font-style:italic;margin:16px 0 0">${esc(m.tagline)}</p>` : ''}
     ${m.overview ? `<div class="block" style="margin-top:8px"><p class="synopsis" style="margin:0">${esc(m.overview)}</p></div>` : ''}
 
+    <div class="block" id="press" hidden></div>
+
     <div class="block"><h3>Où le regarder</h3>${
       hasStreaming
         ? `<div class="where">${provRow('Abonnement', fr.flatrate)}${provRow('Gratuit', [...(fr.free || []), ...(fr.ads || [])])}${provRow('Location', fr.rent)}${provRow('Achat', fr.buy)}</div>`
@@ -1384,14 +1386,25 @@ function movieHtml(m) {
 
 // Carte « Ta note » : bien visible, utilisable même si le film n'est pas encore dans la liste.
 const RATE_LABELS = ['', 'Pas aimé', 'Bof', 'Pas mal', 'Très bien', 'Coup de cœur'];
+const rateLabel = (v) => RATE_LABELS[Math.ceil(v)] || '';
+const fmtRate = (v) => String(v).replace('.', ',');
+// Étoiles remplies au demi près (3,5 = trois pleines et une moitié).
+const starFill = (v, k) => Math.max(0, Math.min(1, v - (k - 1))) * 100;
+const miniStars = (v) => `<span class="mini-stars" aria-label="${fmtRate(v)} sur 5">${[1, 2, 3, 4, 5].map((k) => `<span style="--f:${starFill(v, k)}%">★</span>`).join('')}</span>`;
 function rateCard(m, saved) {
   const mine = saved?.ratings?.[settings.name] || 0;
   const others = Object.entries(saved?.ratings || {}).filter(([n]) => n !== settings.name);
   return `<div class="rate-card">
-    <div class="rate-head"><div><b>Ta note</b><small>${mine ? RATE_LABELS[mine] : saved?.status === 'seen' ? 'Tu l’as vu : qu’en as-tu pensé ?' : 'Déjà vu ? Note-le, il passe dans « Vus »'}</small></div>
-      <div class="stars big" role="radiogroup" aria-label="Ta note">${[1, 2, 3, 4, 5].map((v) => `<button class="${v <= mine ? 'on' : ''}" data-rate="${v}" aria-label="${v} sur 5 : ${RATE_LABELS[v]}" title="${RATE_LABELS[v]}">${icon('star')}</button>`).join('')}</div>
+    <div class="rate-head"><div><b>Ta note</b><small>${mine ? `${fmtRate(mine)}/5 · ${rateLabel(mine)}` : saved?.status === 'seen' ? 'Tu l’as vu : qu’en as-tu pensé ?' : 'Déjà vu ? Note-le, il passe dans « Vus »'}</small></div>
+      <div class="stars big" role="radiogroup" aria-label="Ta note">${[1, 2, 3, 4, 5]
+        .map(
+          (k) => `<span class="hs" style="--f:${starFill(mine, k)}%">${icon('star')}<span class="fill">${icon('star')}</span>${[k - 0.5, k]
+            .map((v) => `<button class="${v === k ? 'r' : 'l'}" data-rate="${v}" aria-label="${fmtRate(v)} sur 5" title="${fmtRate(v)} · ${rateLabel(v)}"></button>`)
+            .join('')}</span>`,
+        )
+        .join('')}</div>
     </div>
-    ${others.length ? `<div class="rate-others">${others.map(([n, v]) => `<span>${avatar(n)}<span class="mini-stars">${'★'.repeat(v)}<i>${'★'.repeat(5 - v)}</i></span></span>`).join('')}</div>` : ''}
+    ${others.length ? `<div class="rate-others">${others.map(([n, v]) => `<span>${avatar(n)}${miniStars(v)}</span>`).join('')}</div>` : ''}
   </div>`;
 }
 
@@ -1448,7 +1461,7 @@ function wireMovie(content, m, redraw) {
       const v = Number(b.dataset.rate);
       const value = saved?.ratings?.[settings.name] === v ? 0 : v;
       listAction({ action: 'rate', movieId: m.id, movie: saved ? undefined : m, value }, after);
-      if (value) toast(`${v}/5 · ${RATE_LABELS[v]}`);
+      if (value) toast(`${fmtRate(v)}/5 · ${rateLabel(v)}`);
     }
     redraw();
     refreshMovieUi(m.id);
@@ -1466,6 +1479,27 @@ function wireMovie(content, m, redraw) {
     box.innerHTML = `<span class="lbl">SensCritique</span><b>${d?.rating ? fr1(d.rating) : '–'}<small>/10</small></b><span class="sub">${d?.count ? `${Number(d.count).toLocaleString('fr-FR')} notes` : d?.rating ? '' : 'Voir sur le site'}</span>`;
   });
   loadSeances(content, m);
+  loadPress(content, m);
+}
+
+// Ce qu'en dit la presse (Allociné) : note moyenne et extraits.
+async function loadPress(content, m) {
+  const box = $('#press', content);
+  if (!box || isFuture(frRelease(m).theatrical || m.release_date)) return;
+  const d = await critiques(m);
+  if (!box.isConnected || !d?.reviews?.length) return;
+  const avg = d.average ? `<span class="press-avg">${miniStars(d.average)}<b>${fr1(d.average)}</b>/5 · ${d.reviews.length} critique${d.reviews.length > 1 ? 's' : ''}</span>` : '';
+  box.innerHTML = `<h3>La critique ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">Tout lire</a>` : ''}</h3>${avg}
+    <div class="press-rail">${d.reviews
+      .slice(0, 12)
+      .map(
+        (r) => `<figure class="press-card">
+        <blockquote>${esc(r.quote)}</blockquote>
+        <figcaption><b>${esc(r.outlet)}</b>${r.rating ? miniStars(r.rating) : ''}<small>${esc(r.author)}</small></figcaption>
+      </figure>`,
+      )
+      .join('')}</div>`;
+  box.hidden = false;
 }
 
 async function loadSeances(content, m, day = today()) {

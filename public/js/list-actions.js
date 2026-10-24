@@ -51,11 +51,12 @@ export function applyAction(list, body) {
         return applyAction(added, { ...body, movie: undefined, movieId: body.movie.id });
       }
       const ratings = { ...(items[idx].ratings || {}) };
-      const value = Number(body.value);
-      if (value >= 1 && value <= 5) ratings[by] = value;
+      // Notes au demi-point près : 0,5 à 5.
+      const value = Math.round(Number(body.value) * 2) / 2;
+      if (value >= 0.5 && value <= 5) ratings[by] = value;
       else delete ratings[by];
       // Une note veut dire qu'on l'a vu.
-      const seen = value >= 1 && items[idx].status !== 'seen' ? { status: 'seen', seenAt: new Date().toISOString() } : {};
+      const seen = value >= 0.5 && items[idx].status !== 'seen' ? { status: 'seen', seenAt: new Date().toISOString() } : {};
       items[idx] = { ...items[idx], ...seen, ratings };
       return { items };
     }

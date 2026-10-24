@@ -536,13 +536,31 @@ html, body { overflow-x: clip; }
 .rate-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rate-head b { display: block; font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
 .rate-head small { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-.stars.big { gap: 2px; }
-.stars.big button { padding: 3px; }
-.stars.big button svg { width: 32px; height: 32px; }
+.stars.big { gap: 4px; }
+.stars .hs { position: relative; width: 36px; height: 36px; display: inline-grid; place-items: center; transition: transform .15s var(--spring); }
+.stars .hs:hover { transform: scale(1.1); }
+.stars .hs > svg, .stars .hs .fill svg { width: 34px; height: 34px; }
+.stars .hs > svg { color: var(--faint); opacity: .45; }
+.stars .hs .fill { position: absolute; inset: 0; display: grid; place-items: center; color: var(--yellow); clip-path: inset(0 calc(100% - var(--f)) 0 0); transition: clip-path .15s; }
+.stars .hs button { position: absolute; top: 0; bottom: 0; width: 50%; padding: 0; }
+.stars .hs button.l { left: 0; }
+.stars .hs button.r { right: 0; }
 .rate-others { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .rate-others > span { display: inline-flex; align-items: center; gap: 7px; }
-.mini-stars { color: var(--yellow); font-size: 13px; letter-spacing: 1px; }
-.mini-stars i { font-style: normal; color: var(--faint); opacity: .5; }
+.mini-stars { display: inline-flex; font-size: 13px; letter-spacing: 1px; }
+.mini-stars > span { background: linear-gradient(90deg, var(--yellow) var(--f), color-mix(in srgb, var(--faint) 55%, transparent) var(--f)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* La critique */
+.press-avg { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin: -2px 0 12px; }
+.press-avg b { color: var(--text); font-size: 15px; font-weight: 700; margin-right: -6px; }
+.press-rail { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 0 6px; scrollbar-width: none; }
+.press-rail::-webkit-scrollbar { display: none; }
+.press-card { flex: none; width: min(300px, 78%); margin: 0; scroll-snap-align: start; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); }
+.press-card blockquote { margin: 0; font-size: 14.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; overflow: hidden; }
+.press-card blockquote::before { content: '«\00a0'; color: var(--muted); }
+.press-card blockquote::after { content: '\00a0»'; color: var(--muted); }
+.press-card figcaption { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; font-size: 13px; }
+.press-card figcaption small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 
 /* Récompenses */
 .fest-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 6px 0 4px; }

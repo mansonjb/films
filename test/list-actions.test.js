@@ -52,3 +52,10 @@ test('noter un film « à voir » le passe en vu', () => {
   assert.equal(out.items[0].status, 'seen');
   assert.equal(out.items[0].ratings['Léa'], 5);
 });
+
+test('demi-notes acceptées et arrondies au demi-point', () => {
+  const base = { items: [{ id: 7, title: 'X', status: 'todo' }] };
+  assert.equal(applyAction(base, { action: 'rate', movieId: 7, value: 2.5, by: 'JB' }).items[0].ratings.JB, 2.5);
+  assert.equal(applyAction(base, { action: 'rate', movieId: 7, value: 3.3, by: 'JB' }).items[0].ratings.JB, 3.5);
+  assert.equal(applyAction(base, { action: 'rate', movieId: 7, value: 0.5, by: 'JB' }).items[0].status, 'seen');
+});

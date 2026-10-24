@@ -182,6 +182,15 @@ export function senscritique(m) {
 // ---------- Récompenses (Wikidata) ----------
 
 const awardsCache = new Map();
+const pressCache = new Map();
+export function critiques(m) {
+  if (!pressCache.has(m.id)) {
+    const qs = new URLSearchParams({ title: m.title, original: m.original_title || '', year: (m.release_date || '').slice(0, 4) });
+    pressCache.set(m.id, fetch(`/api/critiques?${qs}`).then((r) => r.json()).catch(() => ({ reviews: [] })));
+  }
+  return pressCache.get(m.id);
+}
+
 export function awards(fest, year) {
   const key = `${fest}|${year}`;
   if (!awardsCache.has(key)) {
