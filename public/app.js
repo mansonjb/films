@@ -2,7 +2,7 @@
 // Données : TMDB (films, plateformes JustWatch), Allociné (séances), SensCritique (note).
 
 import {
-  IMG, settings, saveSettings, critiques, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
+  IMG, settings, saveSettings, critiques, runtimeOf, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
   keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique, awards,
 } from './js/data.js';
 import { buildProfile, topEntries, deepRank, recommendationsFrom } from './js/reco.js';
@@ -23,6 +23,16 @@ const isFuture = (d) => d && d > today();
 const daysUntil = (d) => Math.round((new Date(d) - new Date(today())) / 864e5);
 const fr1 = (n) => Number(n).toFixed(1).replace('.', ',');
 const runtime = (min) => (min ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : '');
+const shortRt = (min) => (min ? (min < 60 ? `${min} min` : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`) : '');
+// Tranches de durée, utilisées par la liste et l'onglet Explorer.
+const DURATIONS = [
+  { key: 'court', label: 'Moins d’1h30', short: '< 1h30', max: 89 },
+  { key: 'moyen', label: '1h30 à 2h', short: '1h30–2h', min: 90, max: 120 },
+  { key: 'long', label: '2h à 2h30', short: '2h–2h30', min: 121, max: 150 },
+  { key: 'fleuve', label: 'Plus de 2h30', short: '> 2h30', min: 151 },
+];
+const inDuration = (d, min) => !!min && (!d.min || min >= d.min) && (!d.max || min <= d.max);
+const durationParams = (d) => ({ ...(d.min ? { 'with_runtime.gte': d.min } : {}), ...(d.max ? { 'with_runtime.lte': d.max } : {}) });
 const initials = (name) => (name || '?').trim().slice(0, 2).toUpperCase();
 const hue = (name) => [...(name || '')].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
 const avatar = (name) => `<span class="avatar" style="background:hsl(${hue(name)} 50% 40%)" title="${esc(name)}">${esc(initials(name))}</span>`;
@@ -118,7 +128,7 @@ function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false,
   const date = fullDate && m.release_date ? fmtDate(m.release_date, { day: 'numeric', month: 'short', year: 'numeric' }) : year(m.release_date);
   return `<div class="card">
     <button data-movie="${m.id}" style="display:block;width:100%;text-align:left">
-      ${posterBox(m.poster_path, m.title)}
+      ${posterBox(m.poster_path, m.title).replace(/<\/div>$/, `<span class="dur" data-rt="${m.id}">${m.runtime ? shortRt(m.runtime) : ''}</span></div>`)}
       <div class="t">${esc(m.title)}</div>
       <div class="s">${esc(date)}${m.vote_average ? ` · <svg class="star"><use href="#i-star"/></svg>${fr1(m.vote_average)}` : ''}${sub ? ` · ${esc(sub)}` : ''}</div>
       ${m._award ? `<div class="award">${icon('award')}${esc(m._award)}</div>` : why ? `<div class="why">${esc(why)}</div>` : ''}
@@ -168,8 +178,33 @@ function fillSc(root) {
   }
 }
 
+// Affiche la durée sur les cartes au moment où elles deviennent visibles.
+const rtObserver = new IntersectionObserver(
+  (entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      rtObserver.unobserve(e.target);
+      const id = Number(e.target.dataset.rt);
+      const m = movies.get(id) || inList(id) || { id };
+      runtimeOf(m).then((min) => {
+        if (!min) return;
+        if (movies.has(id)) movies.get(id).runtime = min;
+        for (const el of $$(`[data-rt="${id}"]`)) el.textContent = el.classList.contains('dur') ? shortRt(min) : ` · ${shortRt(min)}`;
+      });
+    }
+  },
+  { rootMargin: '200px' },
+);
+function fillRuntime(root) {
+  for (const el of $$('[data-rt]:not([data-rtw])', root)) {
+    el.dataset.rtw = '1';
+    if (!el.textContent) rtObserver.observe(el);
+  }
+}
+
 function hydrate(root) {
   markNearby(root);
+  fillRuntime(root);
   fillLogos(root);
   fillSc(root);
 }
@@ -276,7 +311,7 @@ applyTheme();
 const TITLES = { accueil: 'Accueil', liste: 'Notre liste', cine: 'Au cinéma', streaming: 'Streaming', prix: 'Récompenses', explorer: 'Explorer', reglages: 'Réglages' };
 let currentTab = 'accueil';
 const vs = {
-  listeStatus: 'todo', listeFilter: 'all', listeSort: 'wants', listeView: 'rows', listeGroup: false,
+  listeStatus: 'todo', listeFilter: 'all', listeSort: 'wants', listeView: 'rows', listeGroup: false, listeDur: '',
   cineMode: 'now', cineDay: today(),
   streamProvider: 'mine', streamSort: 'popular', streamGenre: '',
   prixFest: 'cannes', prixYear: 0, cineFr: false, cineNear: false,
@@ -614,9 +649,10 @@ async function renderListe(view, alive) {
     seg([['todo', `À voir${counts.todo ? ` <span class="n">${counts.todo}</span>` : ''}`], ['seen', `Vus${counts.seen ? ` <span class="n">${counts.seen}</span>` : ''}`], ['hidden', 'Écartés']], 'listeStatus', 'ls') +
       '<span class="sep"></span>' +
       [['all', 'Tout'], ['cine', 'Au ciné'], ['mine', 'Sur nos plateformes'], ['soon', 'Bientôt']].map(([k, l]) => `<button class="chip ${vs.listeFilter === k ? 'on' : ''}" data-lf="${k}">${l}</button>`).join('') +
-      `<select class="chip" id="lsort" aria-label="Trier">${[['wants', 'Les plus attendus'], ['recent', 'Ajoutés récemment'], ['release', 'Date de sortie'], ['rating', 'Mieux notés']]
+      `<select class="chip" id="lsort" aria-label="Trier">${[['wants', 'Les plus attendus'], ['recent', 'Ajoutés récemment'], ['release', 'Date de sortie'], ['rating', 'Mieux notés'], ['duree', 'Plus courts d’abord']]
         .map(([k, l]) => `<option value="${k}" ${vs.listeSort === k ? 'selected' : ''}>${l}</option>`)
         .join('')}</select>` +
+      `<select class="chip ${vs.listeDur ? 'on' : ''}" id="ldur" aria-label="Durée"><option value="">Toutes durées</option>${DURATIONS.map((d) => `<option value="${d.key}" ${vs.listeDur === d.key ? 'selected' : ''}>${d.label}</option>`).join('')}</select>` +
       `<button class="chip ${vs.listeGroup ? 'on' : ''}" data-lg="1">Par genre</button>` +
       seg([['rows', 'Liste'], ['grid', 'Affiches']], 'listeView', 'lv'),
     (e) => {
@@ -633,6 +669,10 @@ async function renderListe(view, alive) {
     vs.listeSort = e.target.value;
     render(false);
   };
+  $('#ldur').onchange = (e) => {
+    vs.listeDur = e.target.value;
+    render(false);
+  };
 
   let items = list.items.filter((i) => (i.status || 'todo') === vs.listeStatus);
   if (vs.listeFilter === 'cine') items = items.filter((i) => nowPlayingIds.has(i.id));
@@ -643,7 +683,15 @@ async function renderListe(view, alive) {
     if (!alive()) return;
     items = items.filter((_, k) => (avail[k]?.flatrate || []).some((p) => mine.has(p.provider_id)));
   }
+  if (vs.listeDur || vs.listeSort === 'duree') {
+    const mins = await Promise.all(items.map((i) => runtimeOf(i)));
+    if (!alive()) return;
+    items.forEach((i, k) => mins[k] && (i.runtime = mins[k]));
+    const d = DURATIONS.find((x) => x.key === vs.listeDur);
+    if (d) items = items.filter((i) => inDuration(d, i.runtime));
+  }
   const sorters = {
+    duree: (a, b) => (a.runtime || 999) - (b.runtime || 999),
     wants: (a, b) => (b.wants?.length || 0) - (a.wants?.length || 0) || familyAvg(b) - familyAvg(a) || (b.addedAt || '').localeCompare(a.addedAt || ''),
     recent: (a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''),
     release: (a, b) => (b.release_date || '').localeCompare(a.release_date || ''),
@@ -671,7 +719,7 @@ async function renderListe(view, alive) {
       <button data-movie="${i.id}">${posterBox(i.poster_path, i.title, 'w185')}</button>
       <button data-movie="${i.id}" style="text-align:left;min-width:0">
         <h3>${esc(i.title)}</h3>
-        <div class="meta">${[year(i.release_date), ...genreNames(i, 2)].filter(Boolean).map(esc).join(' · ')}${i.vote_average ? ` · ★ ${fr1(i.vote_average)}` : ''}</div>
+        <div class="meta">${[year(i.release_date), ...genreNames(i, 2)].filter(Boolean).map(esc).join(' · ')}${i.vote_average ? ` · ★ ${fr1(i.vote_average)}` : ''}<span data-rt="${i.id}">${i.runtime ? ` · ${shortRt(i.runtime)}` : ''}</span></div>
         <div class="line">${status}<span data-sc="${i.id}"></span>${avg ? `<span class="badge plain">Nous ${fr1(avg)}/5</span>` : ''}<span class="avatars">${(i.wants || []).map(avatar).join('')}</span><span class="logos" data-logos="${i.id}" style="margin:0"></span></div>
         ${i.note ? `<div class="note">« ${esc(i.note)} »</div>` : ''}
       </button>
@@ -979,6 +1027,7 @@ async function renderExplorer(view, alive) {
   const tiles = (arr) => `<div class="genres">${arr.map((t) => `<button class="genre" data-theme="${t.key}"><span><b>${esc(t.label)}</b></span></button>`).join('')}</div>`;
   view.innerHTML = `
     <button class="input" data-open-search style="width:100%;display:flex;align-items:center;gap:10px;color:var(--muted);text-align:left">${icon('search')}Un film, un acteur, une réalisatrice…</button>
+    ${sectionHtml('Selon le temps qu’on a', `<div class="durs">${DURATIONS.map((d) => `<button class="dur-tile" data-dur="${d.key}"><b>${esc(d.short)}</b><span>${esc(d.label)}</span><small data-dur-n="${d.key}">&nbsp;</small></button>`).join('')}</div>`)}
     ${sectionHtml('Genres', tiles(THEMES.filter((t) => t.params)))}
     ${sectionHtml('Thèmes', tiles(THEMES.filter((t) => !t.params)))}
     <div id="ex-trend">${sectionHtml('Tendances de la semaine', skRail())}</div>
@@ -995,6 +1044,14 @@ async function renderExplorer(view, alive) {
         if (!m || !el || !alive()) return;
         el.insertAdjacentHTML('afterbegin', `<img loading="lazy" src="${IMG}w500${m.backdrop_path}" alt="">`);
         el.querySelector('span').insertAdjacentHTML('beforeend', `<small>${(d.total_results || 0).toLocaleString('fr-FR')} films</small>`);
+      })
+      .catch(() => {});
+  }
+  for (const d of DURATIONS) {
+    tmdb('discover/movie', { 'vote_count.gte': 300, ...durationParams(d) })
+      .then((r) => {
+        const el = view.querySelector(`[data-dur-n="${d.key}"]`);
+        if (el && alive()) el.textContent = `${(r.total_results || 0).toLocaleString('fr-FR')} films`;
       })
       .catch(() => {});
   }
@@ -1596,6 +1653,7 @@ async function showPerson(entry, content, ok) {
 async function showTheme(entry, content, ok) {
   let sort = 'popularity.desc';
   let onlyMine = false;
+  let dur = '';
   let page = 0;
   let total = 1;
   const base = entry.params || (await themeParams(entry.theme));
@@ -1609,6 +1667,7 @@ async function showTheme(entry, content, ok) {
           <div class="subtools" style="margin-top:10px">
             <div class="seg" id="ts">${[['popularity.desc', 'Populaires'], ['vote_average.desc', 'Mieux notés'], ['primary_release_date.desc', 'Récents']].map(([k, l]) => `<button class="${sort === k ? 'on' : ''}" data-ts="${k}">${l}</button>`).join('')}</div>
             ${settings.providers.length ? `<button class="chip ${onlyMine ? 'on' : ''}" id="tm">Sur nos plateformes</button>` : ''}
+            ${entry.params?.['with_runtime.gte'] || entry.params?.['with_runtime.lte'] ? '' : `<select class="chip ${dur ? 'on' : ''}" id="tdur" aria-label="Durée"><option value="">Toutes durées</option>${DURATIONS.map((d) => `<option value="${d.key}" ${dur === d.key ? 'selected' : ''}>${d.label}</option>`).join('')}</select>`}
           </div>
           <div id="theme-grid">${skGrid(9)}</div>
           <div style="text-align:center;margin-top:20px"><button class="btn secondary" id="theme-more" hidden>Voir plus</button></div>
@@ -1626,12 +1685,19 @@ async function showTheme(entry, content, ok) {
           onlyMine = !onlyMine;
           draw(true);
         };
+      const td = $('#tdur', content);
+      if (td)
+        td.onchange = () => {
+          dur = td.value;
+          draw(true);
+        };
       $('#theme-more', content).onclick = () => draw(false);
     }
     page += 1;
     const params = { ...base, 'vote_count.gte': base['vote_count.gte'] ?? 30, sort_by: base.sort_by && sort === 'popularity.desc' ? base.sort_by : sort, page };
     if (sort === 'vote_average.desc') params['vote_count.gte'] = Math.max(300, params['vote_count.gte']);
     if (sort === 'primary_release_date.desc') params['primary_release_date.lte'] = today();
+    if (dur) Object.assign(params, durationParams(DURATIONS.find((d) => d.key === dur)));
     if (onlyMine) Object.assign(params, { watch_region: 'FR', with_watch_providers: settings.providers.join('|'), with_watch_monetization_types: 'flatrate|free|ads' });
     const d = await tmdb('discover/movie', params);
     if (!ok()) return;
@@ -1706,6 +1772,11 @@ document.addEventListener('click', async (e) => {
   }
   const all = t.closest('[data-seeall]');
   if (all && collections.has(all.dataset.seeall)) return pushSheet({ type: 'grid', ...collections.get(all.dataset.seeall) });
+  const dur = t.closest('[data-dur]');
+  if (dur) {
+    const d = DURATIONS.find((x) => x.key === dur.dataset.dur);
+    return pushSheet({ type: 'theme', label: d.label, params: durationParams(d) });
+  }
   const theme = t.closest('[data-theme]');
   if (theme) {
     const th = THEMES.find((x) => x.key === theme.dataset.theme);

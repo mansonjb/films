@@ -1,5 +1,5 @@
 // Service worker : l'app s'ouvre même hors connexion, les données restent fraîches quand on est en ligne.
-const CACHE = 'nos-films-v11';
+const CACHE = 'nos-films-v12';
 const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/js/data.js', '/js/reco.js', '/js/list-actions.js', '/manifest.webmanifest', '/icons/icon.svg'];
 
 self.addEventListener('install', (e) => {

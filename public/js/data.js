@@ -182,6 +182,32 @@ export function senscritique(m) {
 // ---------- Récompenses (Wikidata) ----------
 
 const awardsCache = new Map();
+// Durée d'un film (les listes TMDB ne la donnent pas) : 6 requêtes à la fois au plus.
+const runtimeCache = new Map();
+const rtQueue = [];
+let rtActive = 0;
+function rtNext() {
+  while (rtActive < 6 && rtQueue.length) {
+    const { id, resolve } = rtQueue.shift();
+    rtActive += 1;
+    tmdb(`movie/${id}`)
+      .then((d) => d.runtime || null, () => null)
+      .then((v) => {
+        rtActive -= 1;
+        resolve(v);
+        rtNext();
+      });
+  }
+}
+export function runtimeOf(m) {
+  if (m?.runtime) return Promise.resolve(m.runtime);
+  if (!runtimeCache.has(m.id)) {
+    runtimeCache.set(m.id, new Promise((resolve) => rtQueue.push({ id: m.id, resolve })));
+    rtNext();
+  }
+  return runtimeCache.get(m.id);
+}
+
 const pressCache = new Map();
 export function critiques(m) {
   if (!pressCache.has(m.id)) {
