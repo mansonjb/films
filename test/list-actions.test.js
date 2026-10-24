@@ -32,3 +32,10 @@ test('refuse une action inconnue ou un film absent', () => {
   assert.throws(() => applyAction({ items: [] }, { action: 'nope' }), /inconnue/);
   assert.throws(() => applyAction({ items: [] }, { action: 'remove', movieId: 1 }), /introuvable/);
 });
+
+test('« pas intéressé » ajoute le film masqué, sans envie, avec ses genres', () => {
+  const l = applyAction({ items: [] }, { action: 'add', movie: { id: 7, title: 'X', genres: [{ id: 28 }] }, by: 'JB', status: 'hidden' });
+  assert.equal(l.items[0].status, 'hidden');
+  assert.deepEqual(l.items[0].wants, []);
+  assert.deepEqual(l.items[0].genre_ids, [28]);
+});

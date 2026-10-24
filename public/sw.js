@@ -1,6 +1,6 @@
 // Service worker : l'app s'ouvre même hors connexion, les données restent fraîches quand on est en ligne.
-const CACHE = 'nos-films-v1';
-const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest', '/icons/icon.svg'];
+const CACHE = 'nos-films-v2';
+const SHELL = ['/', '/index.html', '/styles.css', '/app.js', '/js/data.js', '/js/reco.js', '/manifest.webmanifest', '/icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

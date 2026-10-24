@@ -8,10 +8,11 @@ const ALLOWED = [
   /^movie\/\d+$/,
   /^movie\/\d+\/(watch\/providers|recommendations|similar)$/,
   /^trending\/movie\/(day|week)$/,
-  /^search\/movie$/,
+  /^search\/(movie|person|keyword)$/,
+  /^person\/\d+$/,
+  /^genre\/movie\/list$/,
   /^discover\/movie$/,
   /^watch\/providers\/movie$/,
-  /^genre\/movie\/list$/,
 ];
 
 export default async function handler(req, res) {
