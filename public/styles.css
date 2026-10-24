@@ -555,3 +555,9 @@ html, body { overflow-x: clip; }
 .winner-top .k svg { width: 16px; height: 16px; }
 .winner-top h3 { margin: 6px 0 6px; font: 750 clamp(24px, 4vw, 34px)/1.05 var(--display); letter-spacing: -0.04em; }
 .winner-top p { margin: 0; color: var(--text-2); font-size: 14px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Pastille « passe dans vos cinémas » */
+.badge.near { background: var(--blue); color: #fff; max-width: 100%; min-width: 0; }
+.badge.near span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.badge.near svg { width: 11px; height: 11px; flex: none; }
+.chip svg { width: 15px; height: 15px; }

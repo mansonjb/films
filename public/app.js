@@ -44,6 +44,52 @@ let genreMap = new Map();
 genres().then((g) => (genreMap = g)).catch(() => {});
 const genreNames = (m, n = 2) => (m.genres ? m.genres.map((g) => g.name) : (m.genre_ids || []).map((id) => genreMap.get(id)).filter(Boolean)).slice(0, n);
 
+// ---------- Films qui passent dans nos cinémas ----------
+
+// titre normalisé -> noms des cinémas (séances d'aujourd'hui et des 2 jours suivants)
+let nearby = new Map();
+let nearbyLoaded = null;
+function loadNearby() {
+  if (!settings.theaters.length) return Promise.resolve(nearby);
+  if (nearbyLoaded) return nearbyLoaded;
+  const days = nextDays(3).map((d) => d.iso);
+  nearbyLoaded = Promise.all(settings.theaters.flatMap((t) => days.map((day) => seances(t.id, day).then((d) => ({ t, d })).catch(() => null)))).then((res) => {
+    const map = new Map();
+    for (const r of res.filter(Boolean)) {
+      for (const mv of r.d.movies || []) {
+        for (const key of [normalize(mv.title), normalize(mv.originalTitle)].filter(Boolean)) {
+          if (!map.has(key)) map.set(key, new Set());
+          map.get(key).add(r.t.name || r.d.theaterName || r.t.id);
+        }
+      }
+    }
+    nearby = map;
+    markNearby(document);
+    return map;
+  });
+  return nearbyLoaded;
+}
+function nearbyFor(m) {
+  if (!m) return null;
+  const set = nearby.get(normalize(m.title)) || nearby.get(normalize(m.original_title));
+  return set ? [...set] : null;
+}
+const nearbyBadge = (names) => `<span class="badge near" title="${esc(names.join(', '))}">${icon('ticket')}<span>${esc(names.length === 1 ? names[0] : `${names.length} de vos cinémas`)}</span></span>`;
+// Ajoute la pastille aux cartes déjà affichées une fois les séances chargées.
+function markNearby(root) {
+  if (!nearby.size) return;
+  for (const card of $$('.card', root)) {
+    const b = card.querySelector('[data-movie]');
+    const badges = card.querySelector('.badges');
+    if (!b || !badges || badges.querySelector('.near')) continue;
+    const names = nearbyFor(movies.get(Number(b.dataset.movie)) || inList(Number(b.dataset.movie)));
+    if (names) {
+      badges.querySelector('.badge.red')?.remove();
+      badges.insertAdjacentHTML('afterbegin', nearbyBadge(names));
+    }
+  }
+}
+
 // ---------- Petits composants ----------
 
 const movies = new Map(); // films déjà affichés, pour l'ajout instantané
@@ -53,12 +99,14 @@ function posterBox(path, alt, size = 'w342') {
   return `<div class="poster-wrap">${path ? `<img loading="lazy" decoding="async" src="${IMG}${size}${path}" alt="${esc(alt)}">` : `<div class="ph">${esc(alt)}</div>`}</div>`;
 }
 
-function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false } = {}) {
+function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false, noCine = false } = {}) {
   remember([m]);
   const saved = inList(m.id);
   const badges = [];
   if (saved?.status === 'seen') badges.push('<span class="badge green">Vu</span>');
-  if (nowPlayingIds.has(m.id)) badges.push('<span class="badge red">Au ciné</span>');
+  const near = nearbyFor(m);
+  if (near) badges.push(nearbyBadge(near));
+  else if (nowPlayingIds.has(m.id) && !noCine) badges.push('<span class="badge red">Au ciné</span>');
   else if (isFuture(m.release_date)) badges.push(`<span class="badge">${esc(shortDate(m.release_date))}</span>`);
   const inTodo = saved && saved.status !== 'hidden';
   const date = fullDate && m.release_date ? fmtDate(m.release_date, { day: 'numeric', month: 'short', year: 'numeric' }) : year(m.release_date);
@@ -115,6 +163,7 @@ function fillSc(root) {
 }
 
 function hydrate(root) {
+  markNearby(root);
   fillLogos(root);
   fillSc(root);
 }
@@ -224,7 +273,7 @@ const vs = {
   listeStatus: 'todo', listeFilter: 'all', listeSort: 'wants', listeView: 'rows', listeGroup: false,
   cineMode: 'now', cineDay: today(),
   streamProvider: 'mine', streamSort: 'popular', streamGenre: '',
-  prixFest: 'cannes', prixYear: 0, cineFr: false,
+  prixFest: 'cannes', prixYear: 0, cineFr: false, cineNear: false,
 };
 
 function setTools(html, onClick) {
@@ -657,11 +706,13 @@ function nextDays(n = 7) {
 async function renderCine(view, alive) {
   setTools(
     `<div class="seg">${[['now', "À l'affiche"], ['soon', 'Prochainement'], ['prog', 'Séances']].map(([k, l]) => `<button class="${vs.cineMode === k ? 'on' : ''}" data-cm="${k}">${l}</button>`).join('')}</div>` +
+      (vs.cineMode === 'now' && settings.theaters.length ? `<button class="chip ${vs.cineNear ? 'on' : ''}" data-cnear="1">${icon('ticket')}Dans mes cinémas</button>` : '') +
       (vs.cineMode !== 'prog' ? `<button class="chip ${vs.cineFr ? 'on' : ''}" data-cfr="1">Films français</button>` : ''),
     (e) => {
-      const b = e.target.closest('[data-cm], [data-cfr]');
+      const b = e.target.closest('[data-cm], [data-cfr], [data-cnear]');
       if (!b) return;
       if (b.dataset.cm) vs.cineMode = b.dataset.cm;
+      else if (b.dataset.cnear) vs.cineNear = !vs.cineNear;
       else vs.cineFr = !vs.cineFr;
       render(false);
     },
@@ -673,7 +724,15 @@ async function renderCine(view, alive) {
   if (vs.cineMode === 'now') {
     let now = remember((await loadNowPlaying()).sort((a, b) => b.popularity - a.popularity));
     if (vs.cineFr) now = await frenchOnly(now);
-    if (alive()) view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films ${vs.cineFr ? 'français ' : ''}à l’affiche</p>` + gridHtml(now);
+    await loadNearby();
+    if (!alive()) return;
+    const nearCount = now.filter((m) => nearbyFor(m)).length;
+    if (vs.cineNear) now = now.filter((m) => nearbyFor(m));
+    // Les films qui passent près de chez nous d'abord.
+    now.sort((a, b) => !!nearbyFor(b) - !!nearbyFor(a));
+    const info = settings.theaters.length ? ` · ${nearCount} dans vos cinémas cette semaine` : ' · ajoutez vos cinémas dans Réglages pour voir ceux qui passent près de chez vous';
+    view.innerHTML = `<p class="hint" style="margin:0 0 14px">${now.length} films ${vs.cineFr ? 'français ' : ''}à l’affiche${info}</p>` + gridHtml(now, { noCine: true });
+    hydrate(view);
     return;
   }
   let up = remember((await pages('movie/upcoming', {}, 5)).filter((m) => isFuture(m.release_date)).sort((a, b) => a.release_date.localeCompare(b.release_date)));
@@ -1054,6 +1113,9 @@ async function renderReglages(view) {
     const b = e.target.closest('[data-del-theater]');
     if (!b) return;
     saveSettings({ theaters: settings.theaters.filter((t) => t.id !== b.dataset.delTheater) });
+    nearbyLoaded = null;
+    nearby = new Map();
+    loadNearby();
     drawTheaters();
   };
   $('#add-theater').addEventListener('submit', async (e) => {
@@ -1070,6 +1132,8 @@ async function renderReglages(view) {
       } catch {}
     }
     saveSettings({ theaters: [...settings.theaters, { id, name: name || id }] });
+    nearbyLoaded = null;
+    loadNearby();
     $('#t-url').value = '';
     $('#t-name').value = '';
     drawTheaters();
@@ -1669,6 +1733,7 @@ document.addEventListener('visibilitychange', () => {
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 
 drawSidebar();
+loadNearby();
 render();
 Promise.all([listLoaded || !settings.name ? null : fetchList().catch(() => {}), loadNowPlaying().catch(() => {})]).then(updateSideCounts);
 const hashFilm = location.hash.match(/^#film-(\d+)$/);
