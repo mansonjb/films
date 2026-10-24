@@ -5,7 +5,7 @@ import {
   IMG, settings, saveSettings, critiques, runtimeOf, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
   keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique, awards,
 } from './js/data.js';
-import { buildProfile, topEntries, deepRank, recommendationsFrom, isRecent, RECO_MIN_DATE } from './js/reco.js';
+import { buildProfile, topEntries, topTraits, deepRank, recommend, becauseSeeds, isRecent, RECO_MIN_DATE } from './js/reco.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -480,7 +480,8 @@ async function renderAccueil(view, alive) {
   const todo = items.filter((i) => i.status === 'todo');
   const profile = items.length ? await buildProfile(items).catch(() => null) : null;
   if (!alive()) return;
-  const recos = profile ? remember(await recommendationsFrom(profile, 30)) : [];
+  const recos = profile ? remember(await recommend(profile, { limit: 30 }).catch(() => [])) : [];
+  const recoIds = new Set(recos.slice(0, 14).map((m) => m.id));
 
   // Bannière : recommandations d'abord, sinon tendances.
   const useRecos = recos.filter((m) => m.backdrop_path).length >= 3;
@@ -491,13 +492,13 @@ async function renderAccueil(view, alive) {
   const rows = $('#home-rows');
   const blocks = [];
   if (todo.length) blocks.push({ id: 'tonight', title: 'À voir ce soir', sub: 'Dans votre liste et sur vos plateformes' });
-  blocks.push({ id: 'reco', title: 'Recommandés pour vous', sub: profile ? 'D’après vos envies et vos notes' : 'Ajoutez et notez des films pour les affiner' });
+  blocks.push({ id: 'reco', title: 'Recommandés pour vous', sub: profile ? tasteLine(profile) : 'Ajoutez et notez des films pour les affiner' });
   blocks.push({ id: 'top', title: 'Top 10 de la semaine', sub: 'Les films les plus regardés en ce moment' });
   blocks.push({ id: 'stream', title: 'Sur vos plateformes', sub: settings.providers.length ? 'Choisis pour vous' : '' });
   blocks.push({ id: 'soon', title: 'Bientôt au cinéma', sub: profile ? 'Les sorties qui vous ressemblent' : 'Les prochaines sorties' });
   blocks.push({ id: 'now', title: 'À l’affiche', sub: profile ? 'Classés selon vos goûts' : '' });
   blocks.push({ id: 'fr', title: 'Cinéma français', sub: 'Les films français du moment, en salles et en streaming' });
-  (profile?.liked || []).slice(0, 2).forEach((l, k) => blocks.push({ id: `because${k}`, title: `Parce que vous avez aimé ${l.title}`, seed: l }));
+  (profile ? becauseSeeds(profile, 2) : []).forEach((l, k) => blocks.push({ id: `because${k}`, title: `Parce que vous avez aimé ${l.title}`, seed: l }));
   rows.innerHTML = blocks.map((b) => `<div data-sec="${b.id}">${sectionHtml(b.title, skRail(), { sub: b.sub })}</div>`).join('');
 
   const byId = Object.fromEntries(blocks.map((b) => [b.id, b]));
@@ -526,7 +527,7 @@ async function renderAccueil(view, alive) {
     const topGenres = profile ? topEntries(profile.genres, 3).map((g) => g.id).join('|') : '';
     const pool = await Promise.all([pages('discover/movie', { ...base, ...(topGenres ? { with_genres: topGenres } : {}) }, 2), pages('discover/movie', base, 2)]);
     const all = remember([...new Map(pool.flat().map((m) => [m.id, m])).values()]);
-    fillRail('stream', profile ? remember(await deepRank(all, profile, { limit: 24, deep: 16 })) : all, { logos: true });
+    fillRail('stream', profile ? remember(await deepRank(all, profile, { limit: 24, deep: 20, avoid: recoIds })) : all, { logos: true });
   });
   safe('soon', async () => {
     const up = remember((await pages('movie/upcoming', {}, 4)).filter((m) => isFuture(m.release_date)));
@@ -546,8 +547,16 @@ async function renderAccueil(view, alive) {
   for (const b of blocks.filter((x) => x.seed))
     safe(b.id, async () => {
       const d = await movieDetails(b.seed.id);
-      fillRail(b.id, remember((d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id) && isRecent(m))), { why: '' });
+      const own = (d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id) && isRecent(m) && !recoIds.has(m.id));
+      fillRail(b.id, remember(await deepRank(own, profile, { limit: 20, deep: 12 })), { why: '' });
     });
+}
+
+// « D’après vos 42 notes · thrillers, Denis Villeneuve, science-fiction »
+function tasteLine(p) {
+  const top = [...topTraits(p, 'g', 2), ...topTraits(p, 'd', 1), ...topTraits(p, 'k', 1)].map((t) => (t.kind === 'g' ? t.name.toLowerCase() : t.name));
+  const base = p.rated ? `D’après vos ${p.rated} note${p.rated > 1 ? 's' : ''} et votre liste` : 'D’après votre liste';
+  return top.length ? `${base} · ${top.join(', ')}` : base;
 }
 
 function drawHero(arr, eyebrow, alive) {
