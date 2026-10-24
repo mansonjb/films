@@ -17,6 +17,10 @@ export function seedWeight(item) {
   return 1 + 0.4 * Math.max(0, (item.wants || []).length - 1);
 }
 
+// Pas de recommandations de films sortis avant 2010 (les films sans date sont écartés aussi).
+export const RECO_MIN_DATE = '2010-01-01';
+export const isRecent = (m) => (m.release_date || '') >= RECO_MIN_DATE;
+
 let cached = { key: '', profile: null };
 
 export async function buildProfile(items) {
@@ -46,7 +50,7 @@ export async function buildProfile(items) {
     for (const c of (d.credits?.cast || []).slice(0, 5)) add(profile.people, c.id, c.name, w, { role: 'cast' });
     if (w > 0) {
       (d.recommendations?.results || []).slice(0, 20).forEach((m, rank) => {
-        if (profile.exclude.has(m.id)) return;
+        if (profile.exclude.has(m.id) || !isRecent(m)) return;
         const cur = profile.candidates.get(m.id) || { movie: m, score: 0, because: [] };
         cur.score += w * (1 - rank / 30);
         if (cur.because.length < 2) cur.because.push(d.title);
@@ -85,7 +89,7 @@ export function quickScore(m, profile) {
 // Score fin : ajoute réalisateurs, acteurs et thèmes en commun (demande la fiche complète).
 export async function deepRank(movies, profile, { limit = 12, deep = 18 } = {}) {
   const ranked = movies
-    .filter((m) => !profile.exclude.has(m.id))
+    .filter((m) => !profile.exclude.has(m.id) && isRecent(m))
     .map((m) => ({ m, ...quickScore(m, profile) }))
     .sort((a, b) => b.score - a.score);
   const head = ranked.slice(0, deep);

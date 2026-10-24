@@ -5,7 +5,7 @@ import {
   IMG, settings, saveSettings, critiques, runtimeOf, tmdb, pages, movieDetails, genres, nowPlayingIds, loadNowPlaying, providersFor, loadAllProviders,
   keywordId, list, listLoaded, fetchList, listAction, inList, resetList, seances, senscritique, awards,
 } from './js/data.js';
-import { buildProfile, topEntries, deepRank, recommendationsFrom } from './js/reco.js';
+import { buildProfile, topEntries, deepRank, recommendationsFrom, isRecent, RECO_MIN_DATE } from './js/reco.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -522,7 +522,7 @@ async function renderAccueil(view, alive) {
   fill('top', sectionHtml(byId.top.title, topHtml(trend), { sub: byId.top.sub }));
   safe('stream', async () => {
     if (!settings.providers.length) return fill('stream', sectionHtml(byId.stream.title, '<button class="btn secondary" data-tab="reglages">Choisir nos plateformes</button>'));
-    const base = { watch_region: 'FR', with_watch_providers: settings.providers.join('|'), with_watch_monetization_types: 'flatrate|free|ads', sort_by: 'popularity.desc', 'vote_count.gte': 50 };
+    const base = { watch_region: 'FR', with_watch_providers: settings.providers.join('|'), with_watch_monetization_types: 'flatrate|free|ads', sort_by: 'popularity.desc', 'vote_count.gte': 50, 'primary_release_date.gte': RECO_MIN_DATE };
     const topGenres = profile ? topEntries(profile.genres, 3).map((g) => g.id).join('|') : '';
     const pool = await Promise.all([pages('discover/movie', { ...base, ...(topGenres ? { with_genres: topGenres } : {}) }, 2), pages('discover/movie', base, 2)]);
     const all = remember([...new Map(pool.flat().map((m) => [m.id, m])).values()]);
@@ -546,7 +546,7 @@ async function renderAccueil(view, alive) {
   for (const b of blocks.filter((x) => x.seed))
     safe(b.id, async () => {
       const d = await movieDetails(b.seed.id);
-      fillRail(b.id, remember((d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id))), { why: '' });
+      fillRail(b.id, remember((d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id) && isRecent(m))), { why: '' });
     });
 }
 
@@ -1491,7 +1491,7 @@ function movieHtml(m) {
     <div class="ext">${m.imdb_id ? `<a class="chip" href="https://www.imdb.com/title/${esc(m.imdb_id)}/" target="_blank" rel="noopener">IMDb</a>` : ''}<a class="chip" href="https://www.themoviedb.org/movie/${m.id}" target="_blank" rel="noopener">TMDB</a><a class="chip" id="sc-link" href="#" target="_blank" rel="noopener">SensCritique</a><a class="chip" href="${esc(allocineSearch(m.title))}" target="_blank" rel="noopener">Allociné</a></div>
     </div>`;
 
-  const recs = remember(m.recommendations?.results || []);
+  const recs = remember((m.recommendations?.results || []).filter(isRecent));
   return `
     <div class="d-hero ${m.backdrop_path ? '' : 'none'}">${m.backdrop_path ? `<img src="${IMG}w1280${m.backdrop_path}" alt="">` : ''}</div>
     <div class="d-head">
