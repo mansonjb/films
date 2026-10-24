@@ -1,7 +1,7 @@
 // Liste partagée de la famille : lecture (GET) et modifications (POST { action, ... }).
 import { sendJson, readBody, checkFamilyCode } from '../lib/http.js';
 import { loadList, saveList } from '../lib/store.js';
-import { applyAction } from '../lib/list-actions.js';
+import { applyAction } from '../public/js/list-actions.js';
 
 export default async function handler(req, res) {
   if (!checkFamilyCode(req)) return sendJson(res, 401, { error: 'Code famille incorrect' });

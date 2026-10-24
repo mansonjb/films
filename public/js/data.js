@@ -1,5 +1,7 @@
 // Accès aux données : réglages locaux, TMDB, liste partagée, séances, SensCritique.
 
+import { applyAction } from './list-actions.js';
+
 export const IMG = 'https://image.tmdb.org/t/p/';
 
 // ---------- Réglages (gardés sur le téléphone) ----------
@@ -109,16 +111,37 @@ export async function fetchList() {
   return list;
 }
 
-export async function listAction(body) {
+// Mise à jour optimiste : l'interface change tout de suite, le serveur confirme ensuite.
+export async function listAction(body, onSettled) {
+  const full = { by: settings.name, ...body };
+  const before = list;
+  try {
+    list = applyAction(list, full);
+  } catch {}
+  const p = sendAction(full).then(
+    (data) => {
+      list = data;
+      onSettled?.();
+      return list;
+    },
+    (e) => {
+      list = before;
+      onSettled?.(e);
+      throw e;
+    },
+  );
+  return onSettled ? list : p;
+}
+
+async function sendAction(body) {
   const r = await fetch('/api/list', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-family-code': settings.familyCode },
-    body: JSON.stringify({ by: settings.name, ...body }),
+    body: JSON.stringify(body),
   });
   const data = await r.json();
   if (!r.ok) throw new Error(data.error || `Erreur ${r.status}`);
-  list = data;
-  return list;
+  return data;
 }
 
 export const inList = (id) => list.items.find((i) => i.id === id);

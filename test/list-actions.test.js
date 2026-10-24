@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyAction } from '../lib/list-actions.js';
+import { applyAction } from '../public/js/list-actions.js';
 
 const movie = { id: 42, title: 'Dune', release_date: '2021-09-15', extra: 'ignoré' };
 
