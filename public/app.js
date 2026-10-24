@@ -274,7 +274,7 @@ const THEMES = [
   { key: 'romance', label: 'Romance', params: { with_genres: '10749' } },
   { key: 'horreur', label: 'Horreur', params: { with_genres: '27' } },
   { key: 'docu', label: 'Documentaire', params: { with_genres: '99' } },
-  { key: 'francais', label: 'Cinéma français', params: { with_origin_country: 'FR' } },
+  { key: 'francais', label: 'Cinéma français', params: { with_origin_country: 'FR', with_original_language: 'fr' } },
   { key: 'classiques', label: 'Grands classiques', params: { sort_by: 'vote_average.desc', 'vote_count.gte': 5000 } },
   { key: 'vrai', label: 'Histoires vraies', keyword: 'based on true story' },
   { key: 'livres', label: 'Adaptés de livres', keyword: 'based on novel or book' },
@@ -1027,6 +1027,7 @@ async function renderExplorer(view, alive) {
   const tiles = (arr) => `<div class="genres">${arr.map((t) => `<button class="genre" data-theme="${t.key}"><span><b>${esc(t.label)}</b></span></button>`).join('')}</div>`;
   view.innerHTML = `
     <button class="input" data-open-search style="width:100%;display:flex;align-items:center;gap:10px;color:var(--muted);text-align:left">${icon('search')}Un film, un acteur, une réalisatrice…</button>
+    <div id="ex-fr">${sectionHtml('Cinéma français', skRail())}</div>
     ${sectionHtml('Selon le temps qu’on a', `<div class="durs">${DURATIONS.map((d) => `<button class="dur-tile" data-dur="${d.key}"><b>${esc(d.short)}</b><span>${esc(d.label)}</span><small data-dur-n="${d.key}">&nbsp;</small></button>`).join('')}</div>`)}
     ${sectionHtml('Genres', tiles(THEMES.filter((t) => t.params)))}
     ${sectionHtml('Thèmes', tiles(THEMES.filter((t) => !t.params)))}
@@ -1055,6 +1056,38 @@ async function renderExplorer(view, alive) {
       })
       .catch(() => {});
   }
+  // Sélection française : un rail des films récents, puis des raccourcis par envie.
+  const FR = { with_origin_country: 'FR', with_original_language: 'fr' };
+  const frPicks = [
+    ['Tout le cinéma français', FR],
+    ['Nouveautés', { ...FR, sort_by: 'primary_release_date.desc', 'primary_release_date.lte': today(), 'vote_count.gte': 5 }],
+    ['Comédies', { ...FR, with_genres: '35' }],
+    ['Drames', { ...FR, with_genres: '18' }],
+    ['Polars', { ...FR, with_genres: '80|53' }],
+    ['Animation', { ...FR, with_genres: '16' }],
+    ['En famille', { ...FR, with_genres: '10751' }],
+    ['Grands classiques', { ...FR, sort_by: 'vote_average.desc', 'vote_count.gte': 1000 }],
+  ];
+  const since = isoDay(new Date(Date.now() - 400 * 864e5));
+  pages('discover/movie', { ...FR, sort_by: 'popularity.desc', 'primary_release_date.gte': since, 'vote_count.gte': 5 }, 2)
+    .then((fr) => {
+      const box = $('#ex-fr');
+      if (!box || !alive()) return;
+      box.innerHTML = sectionHtml(
+        'Cinéma français',
+        `<div class="chips-row">${frPicks.map(([l], k) => `<button class="chip" data-frpick="${k}">${esc(l)}</button>`).join('')}</div>` + railHtml(remember(fr).slice(0, 20), { logos: true }),
+        { sub: 'Les films français de l’année, et tout le catalogue par envie', all: fr },
+      );
+      box.onclick = (e) => {
+        const b = e.target.closest('[data-frpick]');
+        if (!b) return;
+        e.stopPropagation();
+        const [label, params] = frPicks[Number(b.dataset.frpick)];
+        pushSheet({ type: 'theme', label: label === 'Tout le cinéma français' ? 'Cinéma français' : `Cinéma français · ${label}`, params });
+      };
+      hydrate(box);
+    })
+    .catch(() => {});
   const [trend, top] = await Promise.all([tmdb('trending/movie/week').catch(() => ({ results: [] })), pages('movie/top_rated', {}, 2)]);
   if (!alive()) return;
   $('#ex-trend').innerHTML = sectionHtml('Tendances de la semaine', railHtml(remember(trend.results)), { all: trend.results });
