@@ -60,7 +60,9 @@ export async function genres() {
 // Films à l'affiche en France, pour les badges « Au ciné ».
 export let nowPlayingIds = new Set();
 export async function loadNowPlaying() {
-  const movies = await pages('movie/now_playing', {}, 3);
+  // TMDB range dans « à l'affiche » des films qui sortent dans les jours qui viennent : on les garde pour « Prochainement ».
+  const today = new Date().toISOString().slice(0, 10);
+  const movies = (await pages('movie/now_playing', {}, 3)).filter((m) => !m.release_date || m.release_date <= today);
   nowPlayingIds = new Set(movies.map((m) => m.id));
   return movies;
 }

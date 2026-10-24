@@ -74,7 +74,12 @@ function nearbyFor(m) {
   const set = nearby.get(normalize(m.title)) || nearby.get(normalize(m.original_title));
   return set ? [...set] : null;
 }
-const nearbyBadge = (names) => `<span class="badge near" title="${esc(names.join(', '))}">${icon('ticket')}<span>${esc(names.length === 1 ? names[0] : `${names.length} de vos cinémas`)}</span></span>`;
+// Avant la date de sortie, une séance dans nos cinémas est une avant-première.
+const nearbyBadge = (names, m) => {
+  const where = names.length === 1 ? names[0] : `${names.length} de vos cinémas`;
+  const label = m && isFuture(m.release_date) ? `Avant-première · ${where}` : where;
+  return `<span class="badge near" title="${esc(names.join(', '))}">${icon('ticket')}<span>${esc(label)}</span></span>`;
+};
 // Ajoute la pastille aux cartes déjà affichées une fois les séances chargées.
 function markNearby(root) {
   if (!nearby.size) return;
@@ -82,10 +87,11 @@ function markNearby(root) {
     const b = card.querySelector('[data-movie]');
     const badges = card.querySelector('.badges');
     if (!b || !badges || badges.querySelector('.near')) continue;
-    const names = nearbyFor(movies.get(Number(b.dataset.movie)) || inList(Number(b.dataset.movie)));
+    const m = movies.get(Number(b.dataset.movie)) || inList(Number(b.dataset.movie));
+    const names = nearbyFor(m);
     if (names) {
       badges.querySelector('.badge.red')?.remove();
-      badges.insertAdjacentHTML('afterbegin', nearbyBadge(names));
+      badges.insertAdjacentHTML('afterbegin', nearbyBadge(names, m));
     }
   }
 }
@@ -105,9 +111,9 @@ function movieCard(m, { why = m._why, sub = '', fullDate = false, logos = false,
   const badges = [];
   if (saved?.status === 'seen') badges.push('<span class="badge green">Vu</span>');
   const near = nearbyFor(m);
-  if (near) badges.push(nearbyBadge(near));
-  else if (nowPlayingIds.has(m.id) && !noCine) badges.push('<span class="badge red">Au ciné</span>');
-  else if (isFuture(m.release_date)) badges.push(`<span class="badge">${esc(shortDate(m.release_date))}</span>`);
+  if (near) badges.push(nearbyBadge(near, m));
+  if (isFuture(m.release_date)) badges.push(`<span class="badge">${esc(shortDate(m.release_date))}</span>`);
+  else if (!near && nowPlayingIds.has(m.id) && !noCine) badges.push('<span class="badge red">Au ciné</span>');
   const inTodo = saved && saved.status !== 'hidden';
   const date = fullDate && m.release_date ? fmtDate(m.release_date, { day: 'numeric', month: 'short', year: 'numeric' }) : year(m.release_date);
   return `<div class="card">
