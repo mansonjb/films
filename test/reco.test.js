@@ -32,7 +32,7 @@ globalThis.fetch = async (url) => {
 };
 const slim = (m) => m && { id: m.id, title: m.title, release_date: m.release_date, genre_ids: m.genre_ids, vote_count: m.vote_count, vote_average: m.vote_average, popularity: 50 };
 
-const { buildProfile, recommend, isBlockbuster, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
+const { buildProfile, recommend, isBlockbuster, isUsMainstream, originBonus, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
 
 // Candidats : 100-199 thrillers du réalisateur 1, 200-299 comédies, 300-399 drames variés (réalisateurs différents).
 for (let i = 100; i < 140; i++) film(i, { g: [53], d: 1, k: [7] });
@@ -95,4 +95,14 @@ test('blockbusters : gros budget ou grande saga de spectacle', () => {
   assert.equal(isBlockbuster(f({ g: [18], b: 15, v: 20000 })), false);
   assert.equal(isBlockbuster(f({ g: [35], c: 4, b: 10, v: 3000 })), false);
   assert.equal(isBlockbuster(null, { genre_ids: [878], vote_count: 20000 }), true);
+});
+
+test('cinéma grand public américain écarté, cinéma français et européen favorisé', () => {
+  const f = (g, o, l = 'en', v = 500) => featuresOf({ title: 'x', genres: g.map((id) => ({ id })), origin_country: o, original_language: l, vote_count: v });
+  assert.equal(isUsMainstream(f([28, 35], ['US'])), true, 'action-comédie américaine');
+  assert.equal(isUsMainstream(f([18], ['US'])), false, 'drame américain indépendant');
+  assert.equal(isUsMainstream(f([28, 53], ['FR'], 'fr')), false, 'polar d’action français');
+  assert.equal(isUsMainstream(null, { genre_ids: [28], original_language: 'en' }), true);
+  assert.ok(originBonus(f([18], ['FR'], 'fr')) > originBonus(f([18], ['DK'], 'da')));
+  assert.ok(originBonus(f([18], ['DK'], 'da')) > originBonus(f([18], ['US'])));
 });

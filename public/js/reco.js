@@ -56,7 +56,29 @@ export function featuresOf(d) {
     b: Math.round((d.budget || 0) / 1e6),
     c: d.belongs_to_collection?.id || null,
     v: d.vote_count || 0,
+    o: d.origin_country?.length ? d.origin_country : (d.production_countries || []).map((c) => c.iso_3166_1).slice(0, 3),
   };
+}
+
+// Cinéma grand public américain : production américaine (ou anglophone sans fiche) d'action, d'aventure, de SF,
+// de fantastique, d'animation ou de comédie familiale. Écarté des recommandations comme les blockbusters.
+const MAINSTREAM = new Set([28, 12, 878, 14, 16, 10751, 10752]);
+export function isUsMainstream(f, m = {}) {
+  const genres = f ? f.g.map((g) => g[0]) : m.genre_ids || [];
+  const us = f?.o?.length ? f.o.includes('US') && !f.o.some((c) => EUROPE.has(c)) : (f?.l || m.original_language) === 'en';
+  if (!us) return false;
+  if (genres.some((g) => MAINSTREAM.has(g))) return true;
+  // Comédies et thrillers américains très exposés.
+  return (f?.v || m.vote_count || 0) >= 3000 && genres.some((g) => g === 35 || g === 53);
+}
+const EUROPE = new Set(['FR', 'BE', 'CH', 'LU', 'ES', 'PT', 'IT', 'DE', 'AT', 'NL', 'DK', 'SE', 'NO', 'FI', 'IS', 'IE', 'GB', 'PL', 'CZ', 'HU', 'RO', 'GR', 'TR']);
+// Coup de pouce au cinéma français et européen, et aux autres cinémas non américains.
+export function originBonus(f, m = {}) {
+  const o = f?.o || [];
+  if (o.includes('FR') || (f?.l || m.original_language) === 'fr') return 0.6;
+  if (o.some((c) => EUROPE.has(c))) return 0.4;
+  if (o.length && !o.includes('US')) return 0.25;
+  return o.includes('US') ? -0.35 : 0;
 }
 
 // Blockbusters : gros budget, ou grande saga d'action, d'aventure, de science-fiction ou de fantastique.
@@ -171,7 +193,7 @@ export function diversify(scored, limit, { maxPerSeed = 2, maxPerDirector = 2 } 
 
 // ---------- Cache des traits (sur le téléphone, pour ne pas relire les fiches à chaque visite) ----------
 
-const FKEY = 'recoFeatures:v2';
+const FKEY = 'recoFeatures:v3';
 let fcache = null;
 function featCache() {
   if (fcache) return fcache;
@@ -295,14 +317,14 @@ export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid =
     r.f = feats[k];
     if (!r.f) return;
     const c = contentScore(r.f, profile.taste);
-    r.score = c.score + quality(r.m) + r.collab * 0.8 + Math.min(1, (r.m.popularity || 0) / 150) * 0.15;
+    r.score = c.score + quality(r.m) + r.collab * 0.8 + (noBlockbusters ? originBonus(r.f, r.m) : 0);
     const titles = r.seeds.map((s) => profile.liked.find((l) => l.id === s)?.title).filter(Boolean);
     const strong = /^(Réalisé par|Avec) /.test(c.why);
     r.why = titles.length >= 2 ? `Comme ${titles[0]} et ${titles[1]}` : strong ? c.why : titles[0] ? `Comme ${titles[0]}` : c.why;
   });
   // Les films sans fiche lue passent après ceux qu'on a vraiment comparés.
   ranked.slice(deep).forEach((r) => (r.score -= 1));
-  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m));
+  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m) && !isUsMainstream(r.f, r.m));
   return diversify(ranked.sort((a, b) => b.score - a.score), limit).map((r) => ({ ...r.m, _why: r.why || '' }));
 }
 
@@ -341,8 +363,9 @@ export async function recommend(profile, { limit = 30 } = {}) {
   const queries = [
     ...dirs.map((d) => ({ ...base, with_crew: d.key.slice(1), 'vote_count.gte': 50 })),
     kws.length ? { ...base, with_keywords: kws.map((k) => k.key.slice(1)).join('|') } : null,
-    gen.length >= 2 ? { ...base, with_genres: `${gen[0].key.slice(1)},${gen[1].key.slice(1)}` } : null,
-    gen.length ? { ...base, sort_by: 'popularity.desc', with_genres: gen.map((g) => g.key.slice(1)).join('|'), 'vote_count.gte': 300 } : null,
+    // Genres préférés, mais dans le cinéma français et européen bien noté plutôt que parmi les plus populaires.
+    gen.length ? { ...base, with_genres: gen.map((g) => g.key.slice(1)).join('|'), with_origin_country: 'FR', 'vote_count.gte': 80 } : null,
+    gen.length ? { ...base, with_genres: gen.map((g) => g.key.slice(1)).join('|'), with_origin_country: 'BE|ES|IT|DE|DK|SE|NO|GB|IE|PL|AT|PT|GR', 'vote_count.gte': 150 } : null,
   ].filter(Boolean);
   const found = await pool(queries, 4, (q) => tmdb('discover/movie', q));
   found.forEach((r) => (r?.results || []).slice(0, 15).forEach((m) => addCand(m, null, 0.15)));
