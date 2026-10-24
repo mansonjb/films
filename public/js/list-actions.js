@@ -19,7 +19,9 @@ export function applyAction(list, body) {
       if (!movie?.id) fail('Film manquant');
       if (idx !== -1) return { items };
       const item = Object.fromEntries(MOVIE_FIELDS.filter((f) => movie[f] !== undefined).map((f) => [f, movie[f]]));
-      items.unshift({ ...item, addedBy: by || '?', addedAt: new Date().toISOString(), wants: by ? [by] : [], status: 'todo', ratings: {}, note: '' });
+      if (!item.genre_ids && Array.isArray(movie.genres)) item.genre_ids = movie.genres.map((g) => g.id);
+      const status = ['seen', 'hidden'].includes(body.status) ? body.status : 'todo';
+      items.unshift({ ...item, addedBy: by || '?', addedAt: new Date().toISOString(), wants: by && status === 'todo' ? [by] : [], status, ratings: {}, note: '' });
       return { items };
     }
     case 'remove':
@@ -36,18 +38,26 @@ export function applyAction(list, body) {
     }
     case 'setStatus': {
       if (idx === -1) fail('Film introuvable', 404);
-      const status = body.status === 'seen' ? 'seen' : 'todo';
+      const status = ['seen', 'hidden'].includes(body.status) ? body.status : 'todo';
       items[idx] = { ...items[idx], status, seenAt: status === 'seen' ? new Date().toISOString() : undefined };
       return { items };
     }
     case 'rate': {
-      if (idx === -1) fail('Film introuvable', 404);
       if (!by) fail('Prénom manquant');
+      // Noter un film qui n'est pas encore dans la liste l'ajoute comme « vu ».
+      if (idx === -1) {
+        if (!body.movie?.id) fail('Film introuvable', 404);
+        const added = applyAction({ items }, { action: 'add', movie: body.movie, status: 'seen', by });
+        return applyAction(added, { ...body, movie: undefined, movieId: body.movie.id });
+      }
       const ratings = { ...(items[idx].ratings || {}) };
-      const value = Number(body.value);
-      if (value >= 1 && value <= 5) ratings[by] = value;
+      // Notes au demi-point près : 0,5 à 5.
+      const value = Math.round(Number(body.value) * 2) / 2;
+      if (value >= 0.5 && value <= 5) ratings[by] = value;
       else delete ratings[by];
-      items[idx] = { ...items[idx], ratings };
+      // Une note veut dire qu'on l'a vu.
+      const seen = value >= 0.5 && items[idx].status !== 'seen' ? { status: 'seen', seenAt: new Date().toISOString() } : {};
+      items[idx] = { ...items[idx], ...seen, ratings };
       return { items };
     }
     case 'note': {

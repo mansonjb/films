@@ -5,10 +5,14 @@ Web app (PWA) de watchlist familiale, pensée pour l'iPhone :
 - **Liste partagée** : chacun ajoute des films, coche « je veux le voir », marque « vu », note et laisse un mot.
 - **Streaming** : sur quelles plateformes le film est dispo en France (abonnement, location, achat), avec vos abonnements mis en avant.
 - **Cinéma** : films à l'affiche, sorties à venir par mois, et **séances du jour dans vos cinémas** (Allociné).
-- **Fiche complète** : synopsis, durée, âge conseillé, note, réalisateur, casting, bande-annonce, dates de sortie salles / VOD / DVD, films similaires.
+- **Pour vous** : recommandations calculées à partir de la liste (envies, films vus et leurs notes, films écartés) : à voir sur vos plateformes, bientôt au cinéma, à l'affiche, « parce que vous avez aimé… ».
+- **Streaming par plateforme** : tout le catalogue d'une plateforme (populaires, nouveautés, mieux notés, par genre) et les sorties VOD à venir.
+- **Explorer** : recherche de films et de personnes, thèmes (en famille, histoires vraies, super-héros, voyage dans le temps…).
+- **Fiche complète** : notes SensCritique / TMDB / famille, synopsis, durée, âge conseillé, équipe et casting cliquables, thèmes, bande-annonce, dates de sortie salles / VOD / DVD, films similaires.
+- **Fiche personne** : biographie, films à venir, filmographie (réalisation, rôles, scénario), films de la liste.
 
-Données : [TMDB](https://www.themoviedb.org/) (plateformes fournies par JustWatch) et Allociné pour les séances.
-Allociné n'a pas d'API officielle : si son site change, les séances peuvent cesser de s'afficher (le lien « Voir sur Allociné » reste toujours là).
+Données : [TMDB](https://www.themoviedb.org/) (plateformes fournies par JustWatch), Allociné pour les séances, SensCritique pour la note.
+Allociné et SensCritique n'ont pas d'API officielle : si leur site change, séances ou notes peuvent cesser de s'afficher (les liens vers leurs pages restent toujours là).
 
 ## Mise en ligne (Vercel)
 
