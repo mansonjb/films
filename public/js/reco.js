@@ -53,7 +53,22 @@ export function featuresOf(d) {
     a: (d.credits?.cast || []).slice(0, 6).map((c) => [c.id, c.name]),
     e: year ? Math.floor(year / 5) * 5 : null,
     l: d.original_language || null,
+    b: Math.round((d.budget || 0) / 1e6),
+    c: d.belongs_to_collection?.id || null,
+    v: d.vote_count || 0,
   };
+}
+
+// Blockbusters : gros budget, ou grande saga d'action, d'aventure, de science-fiction ou de fantastique.
+// La famille les a vus mais n'en veut pas en recommandation, ni comme point de départ.
+const SPECTACLE = new Set([28, 12, 878, 14]);
+export function isBlockbuster(f, m = {}) {
+  const genres = f ? f.g.map((g) => g[0]) : m.genre_ids || [];
+  const spectacle = genres.some((g) => SPECTACLE.has(g));
+  if (!f) return spectacle && (m.vote_count || 0) >= 12000;
+  if (f.b >= 90) return true;
+  if (f.c && (f.b >= 40 || (spectacle && f.v >= 5000))) return true;
+  return spectacle && !f.b && f.v >= 15000;
 }
 
 // Familles de traits : importance dans le score et façon de les nommer.
@@ -156,7 +171,7 @@ export function diversify(scored, limit, { maxPerSeed = 2, maxPerDirector = 2 } 
 
 // ---------- Cache des traits (sur le téléphone, pour ne pas relire les fiches à chaque visite) ----------
 
-const FKEY = 'recoFeatures:v1';
+const FKEY = 'recoFeatures:v2';
 let fcache = null;
 function featCache() {
   if (fcache) return fcache;
@@ -223,7 +238,10 @@ export async function buildProfile(items) {
   const later = used.filter((x) => !now.includes(x));
   const feats = await pool(now, 6, (x) => features(x.item.id));
   if (later.length) setTimeout(() => pool(later, 2, (x) => features(x.item.id)).then(() => (cached = { key: '', profile: null })), 4000);
-  const entries = now.map((x, k) => ({ id: x.item.id, title: x.item.title, w: x.w, f: feats[k] })).filter((e) => e.f);
+  // Un blockbuster vu et apprécié ne sert pas de base : seules les déceptions comptent encore.
+  const entries = now
+    .map((x, k) => ({ id: x.item.id, title: x.item.title, w: x.w, f: feats[k] }))
+    .filter((e) => e.f && !(e.w > 0 && isBlockbuster(e.f)));
 
   const taste = buildTaste(entries);
   const liked = entries
@@ -262,9 +280,9 @@ function quickScore(m, profile) {
 }
 
 // Classe une liste de films selon le profil. `avoid` : films déjà montrés ailleurs sur la page.
-export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid = null, sources = null } = {}) {
+export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid = null, sources = null, noBlockbusters = false } = {}) {
   const seen = new Set();
-  const ranked = movies
+  let ranked = movies
     .filter((m) => m && !profile.exclude.has(m.id) && isRecent(m) && !avoid?.has(m.id) && !seen.has(m.id) && seen.add(m.id))
     .map((m) => {
       const src = sources?.get(m.id);
@@ -284,6 +302,7 @@ export async function deepRank(movies, profile, { limit = 12, deep = 18, avoid =
   });
   // Les films sans fiche lue passent après ceux qu'on a vraiment comparés.
   ranked.slice(deep).forEach((r) => (r.score -= 1));
+  if (noBlockbusters) ranked = ranked.filter((r) => !isBlockbuster(r.f, r.m));
   return diversify(ranked.sort((a, b) => b.score - a.score), limit).map((r) => ({ ...r.m, _why: r.why || '' }));
 }
 
@@ -328,7 +347,7 @@ export async function recommend(profile, { limit = 30 } = {}) {
   const found = await pool(queries, 4, (q) => tmdb('discover/movie', q));
   found.forEach((r) => (r?.results || []).slice(0, 15).forEach((m) => addCand(m, null, 0.15)));
 
-  return deepRank([...pool_.values()], profile, { limit, deep: 60, sources });
+  return deepRank([...pool_.values()], profile, { limit, deep: 70, sources, noBlockbusters: true });
 }
 
 // Ancien point d'entrée.

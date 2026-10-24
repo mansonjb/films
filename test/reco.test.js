@@ -32,7 +32,7 @@ globalThis.fetch = async (url) => {
 };
 const slim = (m) => m && { id: m.id, title: m.title, release_date: m.release_date, genre_ids: m.genre_ids, vote_count: m.vote_count, vote_average: m.vote_average, popularity: 50 };
 
-const { buildProfile, recommend, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
+const { buildProfile, recommend, isBlockbuster, featuresOf, itemWeight, familyMean, diversify, buildTaste, contentScore } = await import('../public/js/reco.js');
 
 // Candidats : 100-199 thrillers du réalisateur 1, 200-299 comédies, 300-399 drames variés (réalisateurs différents).
 for (let i = 100; i < 140; i++) film(i, { g: [53], d: 1, k: [7] });
@@ -86,4 +86,13 @@ test('les recommandations s’appuient sur toutes les notes, pas sur deux films'
   assert.equal(comedies, 0, 'les comédies mal notées ne remontent pas');
   assert.ok(thrillers <= 4, `pas plus de quelques thrillers du même réalisateur (${thrillers})`);
   assert.ok(dramas >= 8, `les drames bien notés pèsent aussi (${dramas})`);
+});
+
+test('blockbusters : gros budget ou grande saga de spectacle', () => {
+  const f = (o) => featuresOf({ title: 'x', genres: (o.g || []).map((id) => ({ id })), budget: (o.b || 0) * 1e6, belongs_to_collection: o.c ? { id: o.c } : null, vote_count: o.v || 0 });
+  assert.equal(isBlockbuster(f({ g: [28], b: 200, c: 1 })), true);
+  assert.equal(isBlockbuster(f({ g: [12], c: 9, v: 9000 })), true);
+  assert.equal(isBlockbuster(f({ g: [18], b: 15, v: 20000 })), false);
+  assert.equal(isBlockbuster(f({ g: [35], c: 4, b: 10, v: 3000 })), false);
+  assert.equal(isBlockbuster(null, { genre_ids: [878], vote_count: 20000 }), true);
 });

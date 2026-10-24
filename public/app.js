@@ -519,7 +519,7 @@ async function renderAccueil(view, alive) {
       const ok = todo.filter((_, k) => (avail[k]?.flatrate || []).some((p) => mine.has(p.provider_id)));
       fillRail('tonight', ok, { logos: true }, settings.providers.length ? 'Aucun film de la liste n’est sur vos plateformes pour l’instant.' : 'Choisissez vos plateformes dans Réglages.');
     });
-  fillRail('reco', recos.length ? recos : trend);
+  fillRail('reco', recos.length || profile ? recos : trend);
   fill('top', sectionHtml(byId.top.title, topHtml(trend), { sub: byId.top.sub }));
   safe('stream', async () => {
     if (!settings.providers.length) return fill('stream', sectionHtml(byId.stream.title, '<button class="btn secondary" data-tab="reglages">Choisir nos plateformes</button>'));
@@ -548,7 +548,7 @@ async function renderAccueil(view, alive) {
     safe(b.id, async () => {
       const d = await movieDetails(b.seed.id);
       const own = (d.recommendations?.results || []).filter((m) => !profile.exclude.has(m.id) && isRecent(m) && !recoIds.has(m.id));
-      fillRail(b.id, remember(await deepRank(own, profile, { limit: 20, deep: 12 })), { why: '' });
+      fillRail(b.id, remember(await deepRank(own, profile, { limit: 20, deep: 20, noBlockbusters: true })), { why: '' });
     });
 }
 
